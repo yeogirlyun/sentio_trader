@@ -1,0 +1,154 @@
+#include "strategy/strategy_component.h"
+#include "common/utils.h"
+
+#include <fstream>
+#include <sstream>
+#include <algorithm>
+#include <numeric>
+
+namespace sentio {
+
+// -----------------------------------------------------------------------------
+// StrategyComponent: orchestrates ingestion of Bars and generation of signals.
+// -----------------------------------------------------------------------------
+StrategyComponent::StrategyComponent(const StrategyConfig& config)
+    : config_(config), bars_processed_(0), warmup_complete_(false) {
+    historical_bars_.reserve(static_cast<size_t>(std::max(0, config_.warmup_bars)));
+}
+
+std::vector<SignalOutput> StrategyComponent::process_dataset(
+    const std::string& dataset_path,
+    const std::string& strategy_name,
+    const std::map<std::string, std::string>& /*strategy_params*/) {
+
+    std::vector<SignalOutput> signals;
+    auto bars = utils::read_csv_data(dataset_path);
+
+    for (size_t i = 0; i < bars.size(); ++i) {
+        const auto& bar = bars[i];
+        update_indicators(bar);
+
+        if (is_warmed_up()) {
+            auto signal = generate_signal(bar, static_cast<int>(i));
+            signal.strategy_name = strategy_name;
+            signal.strategy_version = config_.version;
+            signals.push_back(signal);
+        }
+
+        bars_processed_++;
+    }
+
+    return signals;
+}
+
+bool StrategyComponent::export_signals(
+    const std::vector<SignalOutput>& signals,
+    const std::string& output_path,
+    const std::string& format) {
+
+    if (format == "jsonl") {
+        std::vector<std::string> lines;
+        lines.reserve(signals.size());
+        for (const auto& signal : signals) {
+            lines.push_back(signal.to_json());
+        }
+        return utils::write_jsonl(output_path, lines);
+    } else if (format == "csv") {
+        std::vector<std::vector<std::string>> data;
+        // Header row
+        data.push_back({"timestamp_ms", "bar_index", "symbol", "probability",
+                       "confidence", "strategy_name", "strategy_version"});
+        for (const auto& signal : signals) {
+            data.push_back({
+                std::to_string(signal.timestamp_ms),
+                std::to_string(signal.bar_index),
+                signal.symbol,
+                std::to_string(signal.probability),
+                std::to_string(signal.confidence),
+                signal.strategy_name,
+                signal.strategy_version
+            });
+        }
+        return utils::write_csv(output_path, data);
+    }
+
+    return false;
+}
+
+SignalOutput StrategyComponent::generate_signal(const Bar& bar, int bar_index) {
+    // Default implementation: neutral placeholder
+    SignalOutput signal;
+    signal.timestamp_ms = bar.timestamp_ms;
+    signal.bar_index = bar_index;
+    signal.symbol = bar.symbol;
+    signal.probability = 0.5;
+    signal.confidence = 0.5;
+    signal.metadata["warmup_complete"] = warmup_complete_ ? "true" : "false";
+    return signal;
+}
+
+void StrategyComponent::update_indicators(const Bar& bar) {
+    historical_bars_.push_back(bar);
+    if (historical_bars_.size() > static_cast<size_t>(std::max(0, config_.warmup_bars))) {
+        historical_bars_.erase(historical_bars_.begin());
+    }
+
+    // Example: rolling simple moving average of 20 bars
+    if (historical_bars_.size() >= 20) {
+        double sum = 0;
+        for (size_t i = historical_bars_.size() - 20; i < historical_bars_.size(); ++i) {
+            sum += historical_bars_[i].close;
+        }
+        moving_average_.push_back(sum / 20.0);
+    }
+}
+
+bool StrategyComponent::is_warmed_up() const {
+    return bars_processed_ >= config_.warmup_bars;
+}
+
+// -------------------------------- SigorStrategy ------------------------------
+SigorStrategy::SigorStrategy(const StrategyConfig& config)
+    : StrategyComponent(config) {}
+
+SignalOutput SigorStrategy::generate_signal(const Bar& bar, int bar_index) {
+    SignalOutput signal;
+    signal.timestamp_ms = bar.timestamp_ms;
+    signal.bar_index = bar_index;
+    signal.symbol = bar.symbol;
+    signal.probability = calculate_buy_probability(bar);
+    signal.confidence = calculate_confidence(bar);
+    signal.metadata["warmup_complete"] = is_warmed_up() ? "true" : "false";
+    signal.metadata["feature_count"] = "15";
+    return signal;
+}
+
+void SigorStrategy::update_indicators(const Bar& bar) {
+    StrategyComponent::update_indicators(bar);
+    // Extend with Sigor-specific features as needed.
+}
+
+bool SigorStrategy::is_warmed_up() const {
+    return StrategyComponent::is_warmed_up();
+}
+
+double SigorStrategy::calculate_buy_probability(const Bar& bar) {
+    if (!moving_average_.empty()) {
+        double current_ma = moving_average_.back();
+        double deviation = (bar.close - current_ma) / current_ma;
+        return std::clamp(0.5 + (deviation * 2.0), 0.0, 1.0);
+    }
+    return 0.5;
+}
+
+double SigorStrategy::calculate_confidence(const Bar& /*bar*/) {
+    if (!volatility_.empty()) {
+        double recent_vol = volatility_.back();
+        return 1.0 / (1.0 + recent_vol);
+    }
+    return 0.5;
+}
+
+} // namespace sentio
+
+

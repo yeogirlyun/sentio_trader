@@ -1,0 +1,86 @@
+#pragma once
+
+// =============================================================================
+// Module: strategy/strategy_component.h
+// Purpose: Base strategy abstraction and a concrete example (SigorStrategy).
+//
+// Core idea:
+// - A strategy processes a stream of Bars, maintains internal indicators, and
+//   emits SignalOutput records once warm-up is complete.
+// - The base class provides the ingest/export orchestration; derived classes
+//   implement indicator updates and signal generation.
+// =============================================================================
+
+#include <vector>
+#include <memory>
+#include <string>
+#include <map>
+#include "common/types.h"
+#include "signal_output.h"
+
+namespace sentio {
+
+class StrategyComponent {
+public:
+    struct StrategyConfig {
+        std::string name = "default";
+        std::string version = "1.0";
+        double buy_threshold = 0.6;
+        double sell_threshold = 0.4;
+        int warmup_bars = 250;
+        std::map<std::string, double> params;
+    };
+
+    explicit StrategyComponent(const StrategyConfig& config);
+    virtual ~StrategyComponent() = default;
+
+    // Process a dataset file of Bars and return generated signals.
+    std::vector<SignalOutput> process_dataset(
+        const std::string& dataset_path,
+        const std::string& strategy_name,
+        const std::map<std::string, std::string>& strategy_params
+    );
+
+    // Export signals to file in jsonl or csv format.
+    bool export_signals(
+        const std::vector<SignalOutput>& signals,
+        const std::string& output_path,
+        const std::string& format = "jsonl"
+    );
+
+protected:
+    // Hooks for strategy authors to implement
+    virtual SignalOutput generate_signal(const Bar& bar, int bar_index);
+    virtual void update_indicators(const Bar& bar);
+    virtual bool is_warmed_up() const;
+
+protected:
+    StrategyConfig config_;
+    std::vector<Bar> historical_bars_;
+    int bars_processed_ = 0;
+    bool warmup_complete_ = false;
+
+    // Example internal indicators
+    std::vector<double> moving_average_;
+    std::vector<double> volatility_;
+    std::vector<double> momentum_;
+};
+
+// Concrete strategy implementation example
+class SigorStrategy : public StrategyComponent {
+public:
+    explicit SigorStrategy(const StrategyConfig& config);
+
+protected:
+    SignalOutput generate_signal(const Bar& bar, int bar_index) override;
+    void update_indicators(const Bar& bar) override;
+    bool is_warmed_up() const override;
+
+private:
+    double calculate_buy_probability(const Bar& bar);
+    double calculate_confidence(const Bar& bar);
+};
+
+} // namespace sentio
+
+
