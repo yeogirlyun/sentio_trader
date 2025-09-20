@@ -1,0 +1,65 @@
+# Build directories
+/build/
+/bin/
+/obj/
+/out/
+/dist/
+/target/
+
+# Compiled object files and libraries
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.dSYM/
+*.exe
+*.out
+*.app
+
+# Coverage and profiling
+*.gcno
+*.gcda
+*.gcov
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.make
+compile_commands.json
+
+# Autotools
+*.in
+configure
+config.*
+libtool
+m4/
+
+# IDE/editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Logs
+logs/
+!logs/.gitkeep
+*.log
+
+# Temp files
+*.swp
+*.tmp
+*.bak
+
