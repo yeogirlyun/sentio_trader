@@ -5,6 +5,8 @@
 #include <sstream>
 #include <algorithm>
 #include <numeric>
+#include <cmath>
+#include <limits>
 
 namespace sentio {
 
@@ -107,47 +109,7 @@ bool StrategyComponent::is_warmed_up() const {
     return bars_processed_ >= config_.warmup_bars;
 }
 
-// -------------------------------- SigorStrategy ------------------------------
-SigorStrategy::SigorStrategy(const StrategyConfig& config)
-    : StrategyComponent(config) {}
-
-SignalOutput SigorStrategy::generate_signal(const Bar& bar, int bar_index) {
-    SignalOutput signal;
-    signal.timestamp_ms = bar.timestamp_ms;
-    signal.bar_index = bar_index;
-    signal.symbol = bar.symbol;
-    signal.probability = calculate_buy_probability(bar);
-    signal.confidence = calculate_confidence(bar);
-    signal.metadata["warmup_complete"] = is_warmed_up() ? "true" : "false";
-    signal.metadata["feature_count"] = "15";
-    return signal;
-}
-
-void SigorStrategy::update_indicators(const Bar& bar) {
-    StrategyComponent::update_indicators(bar);
-    // Extend with Sigor-specific features as needed.
-}
-
-bool SigorStrategy::is_warmed_up() const {
-    return StrategyComponent::is_warmed_up();
-}
-
-double SigorStrategy::calculate_buy_probability(const Bar& bar) {
-    if (!moving_average_.empty()) {
-        double current_ma = moving_average_.back();
-        double deviation = (bar.close - current_ma) / current_ma;
-        return std::clamp(0.5 + (deviation * 2.0), 0.0, 1.0);
-    }
-    return 0.5;
-}
-
-double SigorStrategy::calculate_confidence(const Bar& /*bar*/) {
-    if (!volatility_.empty()) {
-        double recent_vol = volatility_.back();
-        return 1.0 / (1.0 + recent_vol);
-    }
-    return 0.5;
-}
+// SigorStrategy implementation moved to strategy/sigor_strategy.cpp
 
 } // namespace sentio
 

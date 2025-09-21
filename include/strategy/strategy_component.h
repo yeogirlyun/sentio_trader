@@ -66,20 +66,7 @@ protected:
     std::vector<double> momentum_;
 };
 
-// Concrete strategy implementation example
-class SigorStrategy : public StrategyComponent {
-public:
-    explicit SigorStrategy(const StrategyConfig& config);
-
-protected:
-    SignalOutput generate_signal(const Bar& bar, int bar_index) override;
-    void update_indicators(const Bar& bar) override;
-    bool is_warmed_up() const override;
-
-private:
-    double calculate_buy_probability(const Bar& bar);
-    double calculate_confidence(const Bar& bar);
-};
+// Note: SigorStrategy is defined in `strategy/sigor_strategy.h`.
 
 } // namespace sentio
 

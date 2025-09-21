@@ -14,7 +14,11 @@ std::string SignalOutput::to_json() const {
     m["confidence"] = std::to_string(confidence);
     m["strategy_name"] = strategy_name;
     m["strategy_version"] = strategy_version;
-    // Metadata could be nested; for simplicity, omit or flatten as needed.
+    // Flatten commonly used metadata keys for portability
+    auto it = metadata.find("market_data_path");
+    if (it != metadata.end()) {
+        m["market_data_path"] = it->second;
+    }
     return utils::to_json(m);
 }
 
@@ -40,6 +44,7 @@ SignalOutput SignalOutput::from_json(const std::string& json_str) {
     if (m.count("confidence")) s.confidence = std::stod(m["confidence"]);
     if (m.count("strategy_name")) s.strategy_name = m["strategy_name"];
     if (m.count("strategy_version")) s.strategy_version = m["strategy_version"];
+    if (m.count("market_data_path")) s.metadata["market_data_path"] = m["market_data_path"];
     return s;
 }
 

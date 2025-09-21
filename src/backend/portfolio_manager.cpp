@@ -1,4 +1,5 @@
 #include "backend/portfolio_manager.h"
+#include "common/utils.h"
 
 #include <numeric>
 #include <algorithm>
@@ -8,8 +9,8 @@ namespace sentio {
 PortfolioManager::PortfolioManager(double starting_capital)
     : cash_balance_(starting_capital), realized_pnl_(0.0) {}
 
-bool PortfolioManager::can_buy(const std::string& /*symbol*/, double quantity, double price) {
-    double required_capital = quantity * price;
+bool PortfolioManager::can_buy(const std::string& /*symbol*/, double quantity, double price, double fees) {
+    double required_capital = (quantity * price) + fees;
     return cash_balance_ >= required_capital;
 }
 
@@ -25,6 +26,14 @@ void PortfolioManager::execute_buy(const std::string& symbol, double quantity,
                                    double price, double fees) {
     double total_cost = (quantity * price) + fees;
     cash_balance_ -= total_cost;
+    if (cash_balance_ < -1e-9) {
+        utils::log_error("Negative cash after BUY: symbol=" + symbol +
+                         ", qty=" + std::to_string(quantity) +
+                         ", price=" + std::to_string(price) +
+                         ", fees=" + std::to_string(fees) +
+                         ", cash_balance=" + std::to_string(cash_balance_));
+        std::abort();
+    }
     update_position(symbol, quantity, price);
 }
 
@@ -37,6 +46,14 @@ void PortfolioManager::execute_sell(const std::string& symbol, double quantity,
 
     double proceeds = (quantity * price) - fees;
     cash_balance_ += proceeds;
+    if (cash_balance_ < -1e-9) {
+        utils::log_error("Negative cash after SELL: symbol=" + symbol +
+                         ", qty=" + std::to_string(quantity) +
+                         ", price=" + std::to_string(price) +
+                         ", fees=" + std::to_string(fees) +
+                         ", cash_balance=" + std::to_string(cash_balance_));
+        std::abort();
+    }
 
     // Realized P&L
     double gross_pnl = (price - it->second.avg_price) * quantity;

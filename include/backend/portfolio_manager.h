@@ -21,7 +21,7 @@ public:
     explicit PortfolioManager(double starting_capital);
 
     // Portfolio operations
-    bool can_buy(const std::string& symbol, double quantity, double price);
+    bool can_buy(const std::string& symbol, double quantity, double price, double fees);
     bool can_sell(const std::string& symbol, double quantity);
 
     void execute_buy(const std::string& symbol, double quantity, double price, double fees);

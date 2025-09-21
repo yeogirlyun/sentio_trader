@@ -1,0 +1,34 @@
+{
+  "description": "OHLC variation model based on historical QQQ data",
+  "timestamp": "2025-09-14T12:06:30.756324",
+  "parameters": {
+    "high_low_spread": {
+      "distribution": "lognormal",
+      "mean_pct": 0.0434563071597633,
+      "std_pct": 0.0666177369697831,
+      "min_pct": 0.001,
+      "max_pct": 0.12833332878002984
+    },
+    "high_extension": {
+      "distribution": "normal",
+      "vs_open_mean": 0.021432192096626924,
+      "vs_open_std": 0.046243458260822566,
+      "vs_close_mean": 0.021564636380591015,
+      "vs_close_std": 0.04562105288288777
+    },
+    "low_extension": {
+      "distribution": "normal",
+      "vs_open_mean": 0.022024265686421792,
+      "vs_open_std": 0.040727672732110844,
+      "vs_close_mean": 0.02189167077917229,
+      "vs_close_std": 0.04056297440855206
+    },
+    "volume": {
+      "distribution": "lognormal",
+      "mean": 55265.1051369863,
+      "std": 100743.6582647103,
+      "min": 100,
+      "max": 214997.44999999992
+    }
+  }
+}

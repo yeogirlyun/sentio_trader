@@ -6,6 +6,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
+## Dropping SQLite linkage; file-based trade books will be used
+
 add_library(sentio_common
     src/common/types.cpp
     src/common/utils.cpp
@@ -14,6 +16,8 @@ add_library(sentio_common
 add_library(sentio_strategy
     src/strategy/strategy_component.cpp
     src/strategy/signal_output.cpp
+    src/strategy/sigor_config.cpp
+    src/strategy/sigor_strategy.cpp
 )
 target_link_libraries(sentio_strategy PRIVATE sentio_common)
 
@@ -23,5 +27,11 @@ add_library(sentio_backend
     src/backend/audit_component.cpp
 )
 target_link_libraries(sentio_backend PRIVATE sentio_common)
+
+add_executable(sentio_cli src/cli/sentio_cli_main.cpp)
+target_link_libraries(sentio_cli PRIVATE sentio_backend sentio_strategy sentio_common)
+
+add_executable(audit src/cli/audit_main.cpp)
+target_link_libraries(audit PRIVATE sentio_backend sentio_common)
 
 
