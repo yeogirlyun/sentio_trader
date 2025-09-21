@@ -1,65 +1,121 @@
-# Build directories
-/build/
-/bin/
-/obj/
-/out/
-/dist/
-/target/
+# =============================================================================
+# Sentio Trading System - Git Ignore Rules
+# =============================================================================
+# This file prevents data files, build artifacts, and sensitive information
+# from being tracked in version control while preserving the source code.
 
-# Compiled object files and libraries
-*.o
-*.obj
-*.lo
-*.la
-*.a
-*.so
-*.so.*
-*.dylib
-*.dll
-*.dSYM/
-*.exe
-*.out
-*.app
+# =============================================================================
+# DATA FILES - Never track trading data in git
+# =============================================================================
+# All data files should be generated locally and not stored in version control
+data/
+*.csv
+*.jsonl
+*.bin
+*.sqlite
+*.sqlite3
+*.db
 
-# Coverage and profiling
-*.gcno
-*.gcda
-*.gcov
-
-# CMake
-CMakeFiles/
+# =============================================================================
+# BUILD ARTIFACTS
+# =============================================================================
+# C++ build outputs
+build/
+cmake-build-*/
 CMakeCache.txt
+CMakeFiles/
 cmake_install.cmake
 Makefile
-*.make
-compile_commands.json
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+sentio_cli
+strattest
+audit
 
-# Autotools
-*.in
-configure
-config.*
-libtool
-m4/
+# =============================================================================
+# LOGS AND TEMPORARY FILES
+# =============================================================================
+# System logs and temporary files
+logs/
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
 
-# IDE/editor
+# =============================================================================
+# IDE AND EDITOR FILES
+# =============================================================================
+# Common IDE and editor temporary files
 .vscode/
 .idea/
-*.sublime-project
-*.sublime-workspace
+*.swp
+*.swo
+*~
+*.bak
 
+# =============================================================================
+# PYTHON ARTIFACTS (for tools)
+# =============================================================================
+# Python bytecode and virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# =============================================================================
+# BACKUP AND ARCHIVE FILES
+# =============================================================================
+# Backup files and archives
+*.backup
+*.bak
+*.old
+*.orig
+*.rej
+*.tar
+*.zip
+*.gz
+*.rar
+
+# =============================================================================
+# SENSITIVE INFORMATION
+# =============================================================================
+# Never commit API keys, passwords, or sensitive configuration
+*.key
+*.pem
+*.p12
+*.pfx
+config.ini
+secrets.json
+.env
+.env.local
+.env.production
+
+# =============================================================================
+# SYSTEM SPECIFIC
+# =============================================================================
 # macOS
 .DS_Store
 .AppleDouble
 .LSOverride
-Icon
 
-# Logs
-logs/
-!logs/.gitkeep
-*.log
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Temp files
-*.swp
-*.tmp
-*.bak
-
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
