@@ -323,6 +323,20 @@ void log_debug(const std::string& message) {
     out << iso_now() << " DEBUG common:utils:0 - " << message << '\n';
 }
 
+void log_info(const std::string& message) {
+    ensure_log_dir();
+    std::ofstream out(log_dir() + "/app.log", std::ios::app);
+    if (!out.is_open()) return;
+    out << iso_now() << " INFO common:utils:0 - " << message << '\n';
+}
+
+void log_warning(const std::string& message) {
+    ensure_log_dir();
+    std::ofstream out(log_dir() + "/app.log", std::ios::app);
+    if (!out.is_open()) return;
+    out << iso_now() << " WARNING common:utils:0 - " << message << '\n';
+}
+
 void log_error(const std::string& message) {
     ensure_log_dir();
     std::ofstream out(log_dir() + "/errors.log", std::ios::app);

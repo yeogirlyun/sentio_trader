@@ -130,6 +130,8 @@ double calculate_max_drawdown(const std::vector<double>& equity_curve);
 // Minimal file logger. Writes to logs/debug.log and logs/errors.log.
 // Messages should be pre-sanitized (no secrets/PII).
 void log_debug(const std::string& message);
+void log_info(const std::string& message);
+void log_warning(const std::string& message);
 void log_error(const std::string& message);
 
 // -------------------------------- CLI utilities ------------------------------- 
