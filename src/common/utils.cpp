@@ -344,6 +344,23 @@ void log_error(const std::string& message) {
     out << iso_now() << " ERROR common:utils:0 - " << message << '\n';
 }
 
+bool would_instruments_conflict(const std::string& proposed, const std::string& existing) {
+    // Consolidated conflict detection logic (removes duplicate code)
+    static const std::map<std::string, std::vector<std::string>> conflicts = {
+        {"TQQQ", {"SQQQ", "PSQ"}},
+        {"SQQQ", {"TQQQ", "QQQ"}},
+        {"PSQ",  {"TQQQ", "QQQ"}},
+        {"QQQ",  {"SQQQ", "PSQ"}}
+    };
+    
+    auto it = conflicts.find(proposed);
+    if (it != conflicts.end()) {
+        return std::find(it->second.begin(), it->second.end(), existing) != it->second.end();
+    }
+    
+    return false;
+}
+
 // -------------------------------- CLI utilities -------------------------------
 
 /// Parse command line arguments supporting both "--name value" and "--name=value" formats

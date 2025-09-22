@@ -134,6 +134,9 @@ void log_info(const std::string& message);
 void log_warning(const std::string& message);
 void log_error(const std::string& message);
 
+// Leverage conflict detection utility (consolidates duplicate code)
+bool would_instruments_conflict(const std::string& proposed, const std::string& existing);
+
 // -------------------------------- CLI utilities ------------------------------- 
 /// Flexible command-line argument parser supporting multiple formats
 /// 

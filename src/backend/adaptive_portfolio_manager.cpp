@@ -154,19 +154,7 @@ std::vector<TradeOrder> ConflictResolutionEngine::resolve_conflicts_automaticall
 }
 
 bool ConflictResolutionEngine::would_conflict(const std::string& proposed, const std::string& existing) const {
-    static const std::map<std::string, std::vector<std::string>> conflicts = {
-        {"TQQQ", {"SQQQ", "PSQ"}},
-        {"SQQQ", {"TQQQ", "QQQ"}},
-        {"PSQ",  {"TQQQ", "QQQ"}},
-        {"QQQ",  {"SQQQ", "PSQ"}}
-    };
-    
-    auto it = conflicts.find(proposed);
-    if (it != conflicts.end()) {
-        return std::find(it->second.begin(), it->second.end(), existing) != it->second.end();
-    }
-    
-    return false;
+    return sentio::utils::would_instruments_conflict(proposed, existing);
 }
 
 // ===================================================================
@@ -349,19 +337,7 @@ ProfitMaximizationEngine::filter_conflicting_instruments(
 }
 
 bool ProfitMaximizationEngine::would_conflict(const std::string& proposed, const std::string& existing) const {
-    static const std::map<std::string, std::vector<std::string>> conflicts = {
-        {"TQQQ", {"SQQQ", "PSQ"}},
-        {"SQQQ", {"TQQQ", "QQQ"}},
-        {"PSQ",  {"TQQQ", "QQQ"}},
-        {"QQQ",  {"SQQQ", "PSQ"}}
-    };
-    
-    auto it = conflicts.find(proposed);
-    if (it != conflicts.end()) {
-        return std::find(it->second.begin(), it->second.end(), existing) != it->second.end();
-    }
-    
-    return false;
+    return sentio::utils::would_instruments_conflict(proposed, existing);
 }
 
 // ===================================================================

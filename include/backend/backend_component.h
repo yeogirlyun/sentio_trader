@@ -132,7 +132,9 @@ public:
     std::vector<TradeOrder> process_signals(
         const std::string& signal_file_path,
         const std::string& market_data_path,
-        const BackendConfig& config
+        const BackendConfig& config,
+        size_t start_index = 0,
+        size_t end_index = SIZE_MAX
     );
 
     // (DB export removed) Use process_to_jsonl instead
@@ -162,7 +164,20 @@ private:
     TradeOrder convert_psm_transition_to_order(const PositionStateMachine::StateTransition& transition, 
                                                const SignalOutput& signal, const Bar& bar);
     std::string determine_target_symbol(const PositionStateMachine::StateTransition& transition);
+    
+    // Helper functions for determine_target_symbol (complexity reduction)
+    std::string determine_liquidation_symbol(PositionStateMachine::State current_state);
+    std::string determine_dual_long_symbol(PositionStateMachine::State current_state);
+    std::string determine_dual_short_symbol(PositionStateMachine::State current_state);
+    
     bool is_buy_transition(const PositionStateMachine::StateTransition& transition);
+    
+    // Helper functions for is_buy_transition (complexity reduction)
+    bool is_cash_to_position_transition(const PositionStateMachine::StateTransition& transition);
+    bool is_position_scaling_transition(const PositionStateMachine::StateTransition& transition);
+    bool is_long_scaling_transition(const PositionStateMachine::StateTransition& transition);
+    bool is_short_scaling_transition(const PositionStateMachine::StateTransition& transition);
+    
     bool is_sell_transition(const PositionStateMachine::StateTransition& transition);
     bool check_conflicts(const TradeOrder& order);
     double calculate_fees(double trade_value);

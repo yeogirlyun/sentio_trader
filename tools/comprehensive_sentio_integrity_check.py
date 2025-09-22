@@ -76,8 +76,8 @@ class ComprehensiveSentioIntegrityChecker:
         self.base_dir = Path.cwd()
         
         # Executables
-        self.sentio_cli = "./sencli"
-        self.sentio_audit = "./saudit"
+        self.sentio_cli = "./build/sentio_cli"
+        self.sentio_audit = "./build/audit"
         
         # Tolerance for floating point comparisons
         self.tolerance = 1e-6
