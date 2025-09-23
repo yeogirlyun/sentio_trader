@@ -1,0 +1,13 @@
+{
+  "model_type": "SimpleTransformer",
+  "feature_count": 173,
+  "sequence_length": 64,
+  "d_model": 256,
+  "nhead": 8,
+  "num_layers": 6,
+  "cpp_compatible": true,
+  "export_method": "torch.jit.script",
+  "schema_version": "2.0",
+  "saved_at": 1758566615,
+  "framework": "torchscript"
+}

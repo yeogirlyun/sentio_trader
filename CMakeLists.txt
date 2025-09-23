@@ -4,15 +4,52 @@ project(sentio_trader VERSION 0.1.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Performance optimization flags for Release builds
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    message(STATUS "Enabling maximum performance optimizations for Release build")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native -ffast-math -funroll-loops -flto -DNDEBUG")
+    set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} -flto")
+    add_compile_definitions(NDEBUG)
+    
+    # Enable OpenMP for parallel processing if available
+    find_package(OpenMP)
+    if(OpenMP_CXX_FOUND)
+        message(STATUS "OpenMP found - enabling parallel processing")
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -fopenmp")
+    endif()
+    
+    # Additional performance flags for ML inference
+    # Note: Keeping RTTI and exceptions enabled for LibTorch compatibility
+    message(STATUS "Applied optimization flags: ${CMAKE_CXX_FLAGS_RELEASE}")
+endif()
+
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# Find LibTorch for GRU strategy support (optional)
+# Find LibTorch for ML strategy support (Transformer, GRU)
+# Use Python PyTorch installation which has macOS-compatible libraries
+set(CMAKE_PREFIX_PATH "/Users/yeogirlyun/Library/Python/3.13/lib/python/site-packages/torch" ${CMAKE_PREFIX_PATH})
+
 find_package(Torch QUIET)
 if(Torch_FOUND)
-    message(STATUS "LibTorch found - GRU strategy support enabled")
+    message(STATUS "LibTorch found - ML strategy support enabled")
+    message(STATUS "LibTorch version: ${Torch_VERSION}")
+    
+       # Use macOS-compatible libraries from Python PyTorch installation
+       set(TORCH_LIBRARIES 
+           "/Users/yeogirlyun/Library/Python/3.13/lib/python/site-packages/torch/lib/libtorch.dylib"
+           "/Users/yeogirlyun/Library/Python/3.13/lib/python/site-packages/torch/lib/libc10.dylib"
+           "/Users/yeogirlyun/Library/Python/3.13/lib/python/site-packages/torch/lib/libtorch_cpu.dylib"
+       )
+       message(STATUS "LibTorch libraries: ${TORCH_LIBRARIES}")
+       
+       # Set global include directories for torch headers
+       include_directories("/Users/yeogirlyun/Library/Python/3.13/lib/python/site-packages/torch/include")
+       include_directories("/Users/yeogirlyun/Library/Python/3.13/lib/python/site-packages/torch/include/torch/csrc/api/include")
+    
     set(TORCH_AVAILABLE TRUE)
 else()
-    message(STATUS "LibTorch not found - GRU strategy support disabled")
+    message(STATUS "LibTorch not found - ML strategy support disabled")
+    message(STATUS "Make sure PyTorch 2.6.0 is installed in Python environment")
     set(TORCH_AVAILABLE FALSE)
 endif()
 
@@ -38,21 +75,63 @@ set(STRATEGY_SOURCES
     src/strategy/sigor_config.cpp
     src/strategy/sigor_strategy.cpp
     src/strategy/momentum_scalper.cpp
+    src/strategy/ml_strategy_base.cpp
 )
 
-# Add GRU strategy if LibTorch is available
+# Add ML strategies if LibTorch is available
 if(TORCH_AVAILABLE)
-    list(APPEND STRATEGY_SOURCES src/strategy/gru_strategy.cpp)
-    message(STATUS "Including GRU strategy in build")
+    list(APPEND STRATEGY_SOURCES src/strategy/transformer_strategy.cpp)
+    list(APPEND STRATEGY_SOURCES src/strategy/optimized_gru_strategy.cpp)
+    message(STATUS "Including ML strategies (Transformer + OptimizedGRU) in build")
+    add_compile_definitions(TORCH_AVAILABLE)
+endif()
+
+# ML library with GRU model and training components
+set(ML_SOURCES)
+set(TRAINING_SOURCES)
+
+if(TORCH_AVAILABLE)
+    list(APPEND ML_SOURCES src/ml/gru_model.cpp)
+    list(APPEND TRAINING_SOURCES src/training/gru_trainer.cpp)
 endif()
 
 add_library(sentio_strategy ${STRATEGY_SOURCES})
 target_link_libraries(sentio_strategy PRIVATE sentio_common)
 
+# Link OpenMP if available for performance optimization
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND OpenMP_CXX_FOUND)
+    target_link_libraries(sentio_strategy PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+# Create ML library if LibTorch is available
+if(TORCH_AVAILABLE AND ML_SOURCES)
+    add_library(sentio_ml ${ML_SOURCES})
+    target_link_libraries(sentio_ml PRIVATE sentio_common ${TORCH_LIBRARIES})
+    target_include_directories(sentio_ml PRIVATE ${TORCH_INCLUDE_DIRS})
+    
+    # Create training library
+    if(TRAINING_SOURCES)
+        add_library(sentio_training ${TRAINING_SOURCES})
+        target_link_libraries(sentio_training PRIVATE sentio_common sentio_ml ${TORCH_LIBRARIES})
+        target_include_directories(sentio_training PRIVATE ${TORCH_INCLUDE_DIRS})
+        
+        # Add nlohmann/json if available
+        if(nlohmann_json_FOUND)
+            target_link_libraries(sentio_training PRIVATE nlohmann_json::nlohmann_json)
+        endif()
+    endif()
+endif()
+
 # Link LibTorch if available
 if(TORCH_AVAILABLE)
     target_link_libraries(sentio_strategy PRIVATE ${TORCH_LIBRARIES})
     target_compile_definitions(sentio_strategy PRIVATE TORCH_AVAILABLE)
+    target_include_directories(sentio_strategy PRIVATE ${TORCH_INCLUDE_DIRS})
+    
+    # Link ML library to strategy library
+    if(TARGET sentio_ml)
+        target_link_libraries(sentio_strategy PRIVATE sentio_ml)
+    endif()
 endif()
 
 # Link nlohmann/json if available
@@ -80,10 +159,33 @@ add_executable(sentio_cli
 )
 target_link_libraries(sentio_cli PRIVATE sentio_backend sentio_strategy sentio_common)
 
+# Link LibTorch to CLI if available
+if(TORCH_AVAILABLE)
+    target_link_libraries(sentio_cli PRIVATE ${TORCH_LIBRARIES})
+    target_compile_definitions(sentio_cli PRIVATE TORCH_AVAILABLE)
+endif()
+
 # Primary CLI now uses clean command pattern architecture (77 lines vs 1,382 lines)
 
 add_executable(audit src/cli/audit_main.cpp)
 target_link_libraries(audit PRIVATE sentio_backend sentio_common)
+
+# GRU Trainer executable (only if LibTorch is available)
+if(TORCH_AVAILABLE AND TARGET sentio_training)
+    add_executable(gru_trainer
+        src/cli/gru_trainer_main.cpp
+    )
+    target_link_libraries(gru_trainer PRIVATE sentio_training sentio_ml sentio_common ${TORCH_LIBRARIES})
+    target_include_directories(gru_trainer PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_definitions(gru_trainer PRIVATE TORCH_AVAILABLE)
+    
+    # Add nlohmann/json if available
+    if(nlohmann_json_FOUND)
+        target_link_libraries(gru_trainer PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    message(STATUS "GRU Trainer executable will be built")
+endif()
 
 add_executable(psm_demo src/cli/psm_demo.cpp)
 target_link_libraries(psm_demo PRIVATE sentio_backend sentio_strategy sentio_common)
