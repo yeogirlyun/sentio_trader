@@ -1,4 +1,5 @@
 #include "common/utils.h"
+#include "common/binary_data.h"
 
 #include <fstream>
 #include <iomanip>
@@ -150,6 +151,90 @@ bool write_csv(const std::string& path, const std::vector<std::vector<std::strin
     return true;
 }
 
+// --------------------------- Binary Data utilities ---------------------------
+
+std::vector<Bar> read_market_data_range(const std::string& data_path, 
+                                       uint64_t start_index, 
+                                       uint64_t count) {
+    // Try binary format first (much faster)
+    std::string binary_path = data_path;
+    if (binary_path.length() >= 4 && binary_path.substr(binary_path.length() - 4) == ".csv") {
+        binary_path = binary_path.substr(0, binary_path.length() - 4) + ".bin";
+    }
+    
+    if (std::filesystem::exists(binary_path)) {
+        sentio::binary_data::BinaryDataReader reader(binary_path);
+        if (reader.open()) {
+            if (count == 0) {
+                // Read from start_index to end
+                count = reader.get_bar_count() - start_index;
+            }
+            
+            auto bars = reader.read_range(start_index, count);
+            if (!bars.empty()) {
+                log_debug("Loaded " + std::to_string(bars.size()) + " bars from binary file: " + 
+                         binary_path + " (range: " + std::to_string(start_index) + "-" + 
+                         std::to_string(start_index + count - 1) + ")");
+                return bars;
+            }
+        }
+    }
+    
+    // Fallback to CSV (slower but compatible)
+    log_info("Binary file not found, falling back to CSV: " + data_path);
+    auto all_bars = read_csv_data(data_path);
+    
+    if (all_bars.empty()) {
+        return all_bars;
+    }
+    
+    // Apply range selection
+    if (start_index >= all_bars.size()) {
+        log_error("Start index " + std::to_string(start_index) + 
+                 " exceeds data size " + std::to_string(all_bars.size()));
+        return {};
+    }
+    
+    uint64_t end_index = start_index + (count == 0 ? all_bars.size() - start_index : count);
+    end_index = std::min(end_index, static_cast<uint64_t>(all_bars.size()));
+    
+    std::vector<Bar> result(all_bars.begin() + start_index, all_bars.begin() + end_index);
+    log_debug("Loaded " + std::to_string(result.size()) + " bars from CSV file: " + 
+             data_path + " (range: " + std::to_string(start_index) + "-" + 
+             std::to_string(end_index - 1) + ")");
+    
+    return result;
+}
+
+uint64_t get_market_data_count(const std::string& data_path) {
+    // Try binary format first
+    std::string binary_path = data_path;
+    if (binary_path.length() >= 4 && binary_path.substr(binary_path.length() - 4) == ".csv") {
+        binary_path = binary_path.substr(0, binary_path.length() - 4) + ".bin";
+    }
+    
+    if (std::filesystem::exists(binary_path)) {
+        sentio::binary_data::BinaryDataReader reader(binary_path);
+        if (reader.open()) {
+            return reader.get_bar_count();
+        }
+    }
+    
+    // Fallback to CSV
+    auto bars = read_csv_data(data_path);
+    return bars.size();
+}
+
+std::vector<Bar> read_recent_market_data(const std::string& data_path, uint64_t count) {
+    uint64_t total_count = get_market_data_count(data_path);
+    if (total_count == 0 || count == 0) {
+        return {};
+    }
+    
+    uint64_t start_index = (count >= total_count) ? 0 : (total_count - count);
+    return read_market_data_range(data_path, start_index, count);
+}
+
 // ------------------------------ Time utilities -------------------------------
 int64_t timestamp_to_ms(const std::string& timestamp_str) {
     // Minimal parser for "YYYY-MM-DD HH:MM:SS" -> epoch ms
@@ -168,13 +253,6 @@ std::string ms_to_timestamp(int64_t ms) {
     return std::string(buf);
 }
 
-std::string current_timestamp_str() {
-    std::time_t now = std::time(nullptr);
-    std::tm* gmt = gmtime(&now);
-    char buf[32];
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", gmt);
-    return std::string(buf);
-}
 
 // ------------------------------ JSON utilities -------------------------------
 std::string to_json(const std::map<std::string, std::string>& data) {
@@ -248,18 +326,6 @@ std::map<std::string, std::string> from_json(const std::string& json_str) {
 }
 
 // -------------------------------- Hash utilities -----------------------------
-// Simple SHA-256 based on std::hash fallback: for production, replace with a
-// real SHA-256; we simulate deterministic short id by hashing and hex-encoding.
-std::string calculate_sha256(const std::string& data) {
-    // Not a real SHA-256; placeholder stable hash for demonstration.
-    std::hash<std::string> h;
-    auto v = h(data);
-    std::ostringstream os;
-    os << std::hex << std::setw(16) << std::setfill('0') << v;
-    std::string hex = os.str();
-    // Repeat to reach 32 hex chars
-    return hex + hex;
-}
 
 std::string generate_run_id(const std::string& prefix) {
     // Produce an 8-digit numeric ID. Use time + hash for low collision chance.

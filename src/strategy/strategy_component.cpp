@@ -43,6 +43,45 @@ std::vector<SignalOutput> StrategyComponent::process_dataset(
     return signals;
 }
 
+std::vector<SignalOutput> StrategyComponent::process_dataset_range(
+    const std::string& dataset_path,
+    const std::string& strategy_name,
+    const std::map<std::string, std::string>& /*strategy_params*/,
+    uint64_t start_index,
+    uint64_t count) {
+
+    std::vector<SignalOutput> signals;
+    
+    // Use high-performance index-based loading (binary format preferred)
+    auto bars = utils::read_market_data_range(dataset_path, start_index, count);
+    
+    if (bars.empty()) {
+        utils::log_error("Failed to load market data range: start=" + std::to_string(start_index) + 
+                        ", count=" + std::to_string(count) + ", path=" + dataset_path);
+        return signals;
+    }
+    
+    utils::log_info("Processing " + std::to_string(bars.size()) + " bars from index " + 
+                   std::to_string(start_index) + " (strategy=" + strategy_name + ")");
+
+    // Process bars with adjusted bar indices (maintain original indexing)
+    for (size_t i = 0; i < bars.size(); ++i) {
+        const auto& bar = bars[i];
+        update_indicators(bar);
+
+        if (is_warmed_up()) {
+            auto signal = generate_signal(bar, static_cast<int>(start_index + i));
+            signal.strategy_name = strategy_name;
+            signal.strategy_version = config_.version;
+            signals.push_back(signal);
+        }
+
+        bars_processed_++;
+    }
+
+    return signals;
+}
+
 bool StrategyComponent::export_signals(
     const std::vector<SignalOutput>& signals,
     const std::string& output_path,

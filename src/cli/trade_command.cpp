@@ -32,6 +32,10 @@ int TradeCommand::execute(const std::vector<std::string>& args) {
         return 1;
     }
     
+    // Update config with resolved signals file
+    TradeConfig resolved_config = config;
+    resolved_config.signals_file = signals_file;
+    
     // Extract market data path
     std::string market_path = extract_market_data_path(signals_file);
     if (market_path.empty()) {
@@ -40,7 +44,7 @@ int TradeCommand::execute(const std::vector<std::string>& args) {
     }
     
     // Execute trading
-    return execute_trading(config, market_path);
+    return execute_trading(resolved_config, market_path);
 }
 
 void TradeCommand::show_help() const {
@@ -228,9 +232,14 @@ int TradeCommand::execute_trading(const TradeConfig& config, const std::string& 
         sentio::BackendComponent backend(bc);
         std::string run_id = sentio::utils::generate_run_id("trade");
         
-        // Calculate processing window
-        const size_t BLOCK_SIZE = 450;
+        // Calculate processing window using standard block size
+        const size_t BLOCK_SIZE = sentio::STANDARD_BLOCK_SIZE;
         std::ifstream signal_counter(config.signals_file);
+        if (!signal_counter.is_open()) {
+            std::cerr << "ERROR: Cannot open signal file: " << config.signals_file << std::endl;
+            return 1;
+        }
+        
         size_t total_lines = 0;
         std::string tmp;
         while (std::getline(signal_counter, tmp)) ++total_lines;
@@ -242,12 +251,13 @@ int TradeCommand::execute_trading(const TradeConfig& config, const std::string& 
             start_index = total_lines - max_count;
         }
         
-        size_t slice = (max_count == static_cast<size_t>(-1)) ? total_lines : max_count;
-        std::cout << "Trading last " << slice << " signals starting at index " << start_index << std::endl;
+        size_t signals_to_process = (max_count == static_cast<size_t>(-1)) ? total_lines : std::min(max_count, total_lines - start_index);
+        size_t end_index = start_index + signals_to_process;
+        
+        std::cout << "Trading " << signals_to_process << " signals from index " << start_index << " to " << (end_index - 1) << std::endl;
         
         // Execute trading
         std::string trade_book = "data/trades/" + run_id + "_trades.jsonl";
-        size_t end_index = (max_count == static_cast<size_t>(-1)) ? total_lines : start_index + max_count;
         backend.process_to_jsonl(config.signals_file, market_path, trade_book, run_id, start_index, end_index);
         
         std::cout << "✅ Trading completed successfully" << std::endl;

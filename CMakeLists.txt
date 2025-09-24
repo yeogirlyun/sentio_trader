@@ -66,6 +66,7 @@ add_library(sentio_common
     src/common/utils.cpp
     src/common/json_utils.cpp
     src/common/trade_event.cpp
+    src/common/binary_data.cpp
 )
 
 # Strategy library with conditional GRU support
@@ -78,11 +79,16 @@ set(STRATEGY_SOURCES
     src/strategy/ml_strategy_base.cpp
 )
 
+# Add feature engines (always available)
+list(APPEND STRATEGY_SOURCES src/features/unified_feature_engine.cpp)
+list(APPEND STRATEGY_SOURCES src/features/kochi_feature_engine.cpp)
+
 # Add ML strategies if LibTorch is available
 if(TORCH_AVAILABLE)
     list(APPEND STRATEGY_SOURCES src/strategy/transformer_strategy.cpp)
     list(APPEND STRATEGY_SOURCES src/strategy/optimized_gru_strategy.cpp)
-    message(STATUS "Including ML strategies (Transformer + OptimizedGRU) in build")
+    list(APPEND STRATEGY_SOURCES src/strategy/cpp_ppo_strategy.cpp)
+    message(STATUS "Including ML strategies (Transformer + OptimizedGRU + CppPPO) in build")
     add_compile_definitions(TORCH_AVAILABLE)
 endif()
 
@@ -93,6 +99,7 @@ set(TRAINING_SOURCES)
 if(TORCH_AVAILABLE)
     list(APPEND ML_SOURCES src/ml/gru_model.cpp)
     list(APPEND TRAINING_SOURCES src/training/gru_trainer.cpp)
+    list(APPEND TRAINING_SOURCES src/training/cpp_ppo_trainer.cpp)
 endif()
 
 add_library(sentio_strategy ${STRATEGY_SOURCES})
@@ -157,25 +164,25 @@ add_executable(sentio_cli
     src/cli/trade_command.cpp
     src/cli/audit_command.cpp
 )
-target_link_libraries(sentio_cli PRIVATE sentio_backend sentio_strategy sentio_common)
+# Link only direct dependencies - transitive dependencies will be resolved automatically
+target_link_libraries(sentio_cli PRIVATE sentio_backend sentio_strategy)
 
-# Link LibTorch to CLI if available
+# LibTorch and compile definitions are already linked through sentio_strategy
 if(TORCH_AVAILABLE)
-    target_link_libraries(sentio_cli PRIVATE ${TORCH_LIBRARIES})
     target_compile_definitions(sentio_cli PRIVATE TORCH_AVAILABLE)
 endif()
 
 # Primary CLI now uses clean command pattern architecture (77 lines vs 1,382 lines)
 
 add_executable(audit src/cli/audit_main.cpp)
-target_link_libraries(audit PRIVATE sentio_backend sentio_common)
+target_link_libraries(audit PRIVATE sentio_backend)
 
 # GRU Trainer executable (only if LibTorch is available)
 if(TORCH_AVAILABLE AND TARGET sentio_training)
     add_executable(gru_trainer
         src/cli/gru_trainer_main.cpp
     )
-    target_link_libraries(gru_trainer PRIVATE sentio_training sentio_ml sentio_common ${TORCH_LIBRARIES})
+    target_link_libraries(gru_trainer PRIVATE sentio_training)
     target_include_directories(gru_trainer PRIVATE ${TORCH_INCLUDE_DIRS})
     target_compile_definitions(gru_trainer PRIVATE TORCH_AVAILABLE)
     
@@ -185,17 +192,28 @@ if(TORCH_AVAILABLE AND TARGET sentio_training)
     endif()
     
     message(STATUS "GRU Trainer executable will be built")
+    
+    # C++ PPO Trainer executable
+    add_executable(cpp_ppo_trainer src/cli/cpp_ppo_trainer_main.cpp)
+    target_link_libraries(cpp_ppo_trainer PRIVATE sentio_training sentio_strategy)
+    target_include_directories(cpp_ppo_trainer PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_definitions(cpp_ppo_trainer PRIVATE TORCH_AVAILABLE)
+    message(STATUS "C++ PPO Trainer executable will be built")
 endif()
 
 add_executable(psm_demo src/cli/psm_demo.cpp)
-target_link_libraries(psm_demo PRIVATE sentio_backend sentio_strategy sentio_common)
+target_link_libraries(psm_demo PRIVATE sentio_backend sentio_strategy)
 
 # -----------------------------------------------------------------------------
 # Leverage Data Generation Tool
 # -----------------------------------------------------------------------------
-add_executable(generate_leverage_data
-    tools/generate_leverage_data.cpp
-)
+add_executable(generate_leverage_data tools/generate_leverage_data.cpp)
 target_link_libraries(generate_leverage_data PRIVATE sentio_common)
+
+# -----------------------------------------------------------------------------
+# CSV to Binary Converter Tool
+# -----------------------------------------------------------------------------
+add_executable(csv_to_binary_converter tools/csv_to_binary_converter.cpp)
+target_link_libraries(csv_to_binary_converter PRIVATE sentio_common)
 
 

@@ -40,9 +40,19 @@ private:
     int execute_report(const std::string& run_id, size_t max_trades);
     
     /**
+     * @brief Execute comprehensive report (restored from previous version)
+     */
+    int execute_report_comprehensive(const std::string& run_id, size_t max_trades);
+    
+    /**
      * @brief Execute trade-list subcommand
      */
     int execute_trade_list(const std::string& run_id);
+    
+    /**
+     * @brief Execute signal analysis subcommand
+     */
+    int execute_signal_analysis(const std::vector<std::string>& args);
     
     /**
      * @brief Resolve latest run ID if not provided

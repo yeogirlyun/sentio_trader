@@ -26,6 +26,15 @@
 namespace sentio {
 
 // -----------------------------------------------------------------------------
+// System Constants
+// -----------------------------------------------------------------------------
+
+/// Standard block size for backtesting and signal processing
+/// One block represents approximately 8 hours of trading (480 minutes)
+/// This constant ensures consistency across strattest, trade, and audit commands
+static constexpr size_t STANDARD_BLOCK_SIZE = 480;
+
+// -----------------------------------------------------------------------------
 // Struct: Bar
 // A single OHLCV market bar for a given symbol and timestamp.
 // Core idea: immutable snapshot of market state at time t.

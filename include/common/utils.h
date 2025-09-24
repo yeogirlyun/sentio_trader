@@ -61,6 +61,36 @@ namespace utils {
 /// @return Vector of Bar structures with OHLCV data and metadata
 std::vector<Bar> read_csv_data(const std::string& path);
 
+/// High-performance binary data reader with index-based range queries
+/// 
+/// This function provides fast access to market data stored in binary format:
+/// - Direct index-based access without loading entire dataset
+/// - Support for range queries (start_index, count)
+/// - Automatic fallback to CSV if binary file doesn't exist
+/// - Consistent indexing across entire trading pipeline
+/// 
+/// @param data_path Path to binary file (or CSV as fallback)
+/// @param start_index Starting index for data range (0-based)
+/// @param count Number of bars to read (0 = read all from start_index)
+/// @return Vector of Bar structures for the specified range
+/// @throws Logs errors and returns empty vector on failure
+std::vector<Bar> read_market_data_range(const std::string& data_path, 
+                                       uint64_t start_index = 0, 
+                                       uint64_t count = 0);
+
+/// Get total number of bars in a market data file
+/// 
+/// @param data_path Path to binary or CSV file
+/// @return Total number of bars, or 0 on error
+uint64_t get_market_data_count(const std::string& data_path);
+
+/// Get the most recent N bars from a market data file
+/// 
+/// @param data_path Path to binary or CSV file  
+/// @param count Number of recent bars to retrieve
+/// @return Vector of the most recent bars
+std::vector<Bar> read_recent_market_data(const std::string& data_path, uint64_t count);
+
 /// Write data in JSON Lines format for efficient streaming and processing
 /// 
 /// JSON Lines (JSONL) format stores one JSON object per line, making it ideal
@@ -86,8 +116,6 @@ int64_t timestamp_to_ms(const std::string& timestamp_str);
 // Convert milliseconds since epoch to formatted timestamp string
 std::string ms_to_timestamp(int64_t ms);
 
-// Current wall-clock timestamp in ISO-like string
-std::string current_timestamp_str();
 
 // ------------------------------ JSON utilities -------------------------------
 /// Convert string map to JSON format for lightweight serialization
@@ -116,8 +144,6 @@ std::string to_json(const std::map<std::string, std::string>& data);
 std::map<std::string, std::string> from_json(const std::string& json_str);
 
 // -------------------------------- Hash utilities -----------------------------
-// SHA-256 of input data as lowercase hex string (self-contained implementation)
-std::string calculate_sha256(const std::string& data);
 
 // Generate an 8-digit numeric run id (zero-padded). Unique enough per run.
 std::string generate_run_id(const std::string& prefix);

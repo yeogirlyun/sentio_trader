@@ -13,7 +13,7 @@ namespace cli {
  * pipeline, analyzing historical price patterns to identify opportunities.
  * 
  * Key Features:
- * - Multiple AI strategies (Sigor, GRU, Momentum Scalper)
+ * - Multiple AI strategies (Sigor, GRU, Transformer, Momentum Scalper)
  * - Configurable parameters and output formats
  * - Automatic file organization in data/signals/
  * - JSONL format for efficient signal storage
@@ -44,6 +44,27 @@ private:
                             const std::vector<std::string>& args);
     
     /**
+     * @brief Execute C++ GRU strategy
+     */
+    int execute_cpp_gru_strategy(const std::string& dataset,
+                                const std::string& output,
+                                const std::vector<std::string>& args);
+    
+    /**
+     * @brief Execute Transformer strategy
+     */
+    int execute_transformer_strategy(const std::string& dataset,
+                                    const std::string& output,
+                                    const std::vector<std::string>& args);
+    
+    /**
+     * @brief Execute C++ PPO strategy
+     */
+    int execute_cpp_ppo_strategy(const std::string& dataset,
+                                const std::string& output,
+                                const std::vector<std::string>& args);
+    
+    /**
      * @brief Execute Momentum Scalper strategy
      */
     int execute_momentum_strategy(const std::string& dataset,
@@ -60,6 +81,15 @@ private:
      */
     bool validate_parameters(const std::string& dataset,
                            const std::string& strategy) const;
+    
+    /**
+     * @brief Extract blocks parameter from arguments
+     */
+    int get_blocks_parameter(const std::vector<std::string>& args) const;
+    
+    /**
+     * @brief Create a limited dataset for performance testing
+     */
 };
 
 } // namespace cli

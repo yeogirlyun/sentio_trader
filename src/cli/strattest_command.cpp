@@ -3,6 +3,9 @@
 #include "strategy/sigor_config.h"
 #include <iostream>
 #include <filesystem>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 #include <fstream>
 #include <iomanip>
 #include <unistd.h>
@@ -13,6 +16,7 @@
 #ifdef TORCH_AVAILABLE
 #include "strategy/transformer_strategy.h"
 #include "strategy/optimized_gru_strategy.h"
+#include "strategy/cpp_ppo_strategy.h"
 #endif
 
 // Check if momentum scalper exists
@@ -23,13 +27,58 @@
 namespace sentio {
 namespace cli {
 
+/**
+ * @brief Generate KST timestamp string in MM-DD-HH-MM format
+ */
+std::string generate_kst_timestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto time_t = std::chrono::system_clock::to_time_t(now);
+    
+    // Convert to KST (UTC+9)
+    auto utc_tm = *std::gmtime(&time_t);
+    utc_tm.tm_hour += 9;  // Add 9 hours for KST
+    
+    // Handle day overflow
+    if (utc_tm.tm_hour >= 24) {
+        utc_tm.tm_hour -= 24;
+        utc_tm.tm_mday += 1;
+        // Note: This is a simplified day overflow handling
+        // For production, should use proper date arithmetic
+    }
+    
+    std::ostringstream oss;
+    oss << std::setfill('0') 
+        << std::setw(2) << (utc_tm.tm_mon + 1) << "-"  // Month (1-12)
+        << std::setw(2) << utc_tm.tm_mday << "-"       // Day
+        << std::setw(2) << utc_tm.tm_hour << "-"       // Hour
+        << std::setw(2) << utc_tm.tm_min;              // Minute
+    
+    return oss.str();
+}
+
+/**
+ * @brief Generate auto signal filename: <strategy>-<MM-DD-HH-MM-KST>.jsonl
+ */
+std::string generate_signal_filename(const std::string& strategy) {
+    std::string timestamp = generate_kst_timestamp();
+    return "data/signals/" + strategy + "-" + timestamp + ".jsonl";
+}
+
 int StrattestCommand::execute(const std::vector<std::string>& args) {
     // Parse command-line arguments with intelligent defaults
     std::string dataset = get_arg(args, "--dataset");
-    std::string output = get_arg(args, "--out");
-    const std::string strategy = get_arg(args, "--strategy", "sigor");
+    const std::string strategy = get_arg(args, "--strategy", "sgo");  // Default changed to sgo
+    
+    // Auto-generate output filename based on strategy and timestamp
+    std::string output = generate_signal_filename(strategy);
+    
+    // Ensure signals directory exists
+    std::filesystem::create_directories("data/signals");
+    
     const std::string format = get_arg(args, "--format", "jsonl");
     const std::string config_path = get_arg(args, "--config", "");
+    
+    std::cout << "📁 Auto-generated signal file: " << output << std::endl;
     
     // Show help if requested
     if (has_flag(args, "--help") || has_flag(args, "-h")) {
@@ -52,25 +101,27 @@ int StrattestCommand::execute(const std::vector<std::string>& args) {
     }
     
     // Execute strategy based on type
-    if (strategy == "sigor") {
+    if (strategy == "sgo") {
         return execute_sigor_strategy(dataset, output, config_path, args);
     } else if (strategy == "gru") {
-        // Legacy GRU strategy removed - use cpp_gru instead
-        std::cerr << "Error: Legacy 'gru' strategy has been removed for performance.\n";
-        std::cerr << "Use 'cpp_gru' for the optimized GRU implementation.\n";
-        return 1;
-    } else if (strategy == "cpp_gru") {
 #ifdef TORCH_AVAILABLE
         return execute_cpp_gru_strategy(dataset, output, args);
 #else
-        std::cerr << "Error: C++ GRU strategy not available (LibTorch not found)\n";
+        std::cerr << "Error: GRU strategy not available (LibTorch not found)\n";
         return 1;
 #endif
-    } else if (strategy == "transformer") {
+    } else if (strategy == "tfm") {
 #ifdef TORCH_AVAILABLE
         return execute_transformer_strategy(dataset, output, args);
 #else
         std::cerr << "Error: Transformer strategy not available (LibTorch not found)\n";
+        return 1;
+#endif
+    } else if (strategy == "ppo") {
+#ifdef TORCH_AVAILABLE
+        return execute_cpp_ppo_strategy(dataset, output, args);
+#else
+        std::cerr << "Error: PPO strategy not available (LibTorch not found)\n";
         return 1;
 #endif
     } else if (strategy == "momentum" || strategy == "scalper") {
@@ -82,9 +133,9 @@ int StrattestCommand::execute(const std::vector<std::string>& args) {
 #endif
     } else {
         std::cerr << "Error: Unknown strategy '" << strategy << "'\n";
-        std::cerr << "Available strategies: sigor";
+        std::cerr << "Available strategies: sgo";
 #ifdef TORCH_AVAILABLE
-        std::cerr << ", gru, transformer";
+        std::cerr << ", gru, tfm, ppo";
 #endif
 #ifdef MOMENTUM_SCALPER_AVAILABLE
         std::cerr << ", momentum";
@@ -133,9 +184,26 @@ int StrattestCommand::execute_sigor_strategy(const std::string& dataset,
             sigor->set_config(scfg);
         }
         
-        // Process dataset to generate signals
-        std::cout << "Processing dataset: " << dataset << std::endl;
-        auto signals = sigor->process_dataset(dataset, cfg.name, {});
+        // Get blocks parameter for performance optimization
+        int blocks_to_process = get_blocks_parameter(args);
+        std::vector<sentio::SignalOutput> signals;
+        
+        if (blocks_to_process > 0) {
+            std::cout << "🔧 Performance mode: Processing only " << blocks_to_process << " blocks (~" << (blocks_to_process * STANDARD_BLOCK_SIZE) << " bars)" << std::endl;
+            std::cout << "⚡ Sigor ensemble strategy - fast binary data loading with index-based processing" << std::endl;
+            
+            // Use index-based processing (no temporary files needed)
+            uint64_t total_bars = utils::get_market_data_count(dataset);
+            uint64_t bars_to_process = blocks_to_process * STANDARD_BLOCK_SIZE;
+            uint64_t start_index = (total_bars > bars_to_process) ? (total_bars - bars_to_process) : 0;
+            
+            signals = sigor->process_dataset_range(dataset, cfg.name, {}, start_index, bars_to_process);
+            
+            std::cout << "⚡ Processed " << signals.size() << " signals from range [" << start_index << "-" << (start_index + bars_to_process - 1) << "]" << std::endl;
+        } else {
+            std::cout << "Processing full dataset: " << dataset << std::endl;
+            signals = sigor->process_dataset(dataset, cfg.name, {});
+        }
         
         // Add metadata for traceability
         for (auto& signal : signals) {
@@ -200,7 +268,26 @@ int StrattestCommand::execute_cpp_gru_strategy(const std::string& dataset,
         base_cfg.version = "1.0";
         base_cfg.warmup_bars = config.sequence_length;
         
-        auto signals = cpp_gru->process_dataset(dataset, base_cfg.name, {});
+        // Get blocks parameter for performance optimization
+        int blocks_to_process = get_blocks_parameter(args);
+        std::vector<sentio::SignalOutput> signals;
+        
+        if (blocks_to_process > 0) {
+            std::cout << "🔧 Performance mode: Processing only " << blocks_to_process << " blocks (~" << (blocks_to_process * STANDARD_BLOCK_SIZE) << " bars)" << std::endl;
+            std::cout << "⚡ OptimizedGRU with tensor pooling - fast binary data loading with index-based processing" << std::endl;
+            
+            // Use index-based processing (no temporary files needed)
+            uint64_t total_bars = utils::get_market_data_count(dataset);
+            uint64_t bars_to_process = blocks_to_process * STANDARD_BLOCK_SIZE;
+            uint64_t start_index = (total_bars > bars_to_process) ? (total_bars - bars_to_process) : 0;
+            
+            signals = cpp_gru->process_dataset_range(dataset, base_cfg.name, {}, start_index, bars_to_process);
+            
+            std::cout << "⚡ Processed " << signals.size() << " signals from range [" << start_index << "-" << (start_index + bars_to_process - 1) << "]" << std::endl;
+        } else {
+            std::cout << "⚠️  Processing full dataset - this will take a long time!" << std::endl;
+            signals = cpp_gru->process_dataset(dataset, base_cfg.name, {});
+        }
         
         // Add C++ GRU specific metadata
         for (auto& signal : signals) {
@@ -283,17 +370,17 @@ int StrattestCommand::execute_transformer_strategy(const std::string& dataset,
         std::vector<sentio::SignalOutput> signals;
         
         if (blocks_to_process > 0) {
-            std::cout << "🔧 Performance mode: Processing only " << blocks_to_process << " blocks (~" << (blocks_to_process * 480) << " bars)" << std::endl;
-            std::cout << "⚠️  Large transformer model (4.78M params) - limiting dataset for reasonable inference time" << std::endl;
+            std::cout << "🔧 Performance mode: Processing only " << blocks_to_process << " blocks (~" << (blocks_to_process * STANDARD_BLOCK_SIZE) << " bars)" << std::endl;
+            std::cout << "⚡ Large transformer model (4.78M params) - fast binary data loading with index-based processing" << std::endl;
             
-            // Create limited dataset for testing (correct: 480 bars per block)
-            std::string limited_dataset = create_limited_dataset(dataset, blocks_to_process * 480);
-            signals = transformer->process_dataset(limited_dataset, base_cfg.name, {});
+            // Use index-based processing (no temporary files needed)
+            uint64_t total_bars = utils::get_market_data_count(dataset);
+            uint64_t bars_to_process = blocks_to_process * STANDARD_BLOCK_SIZE;
+            uint64_t start_index = (total_bars > bars_to_process) ? (total_bars - bars_to_process) : 0;
             
-            // Clean up limited dataset
-            std::remove(limited_dataset.c_str());
+            signals = transformer->process_dataset_range(dataset, base_cfg.name, {}, start_index, bars_to_process);
             
-            std::cout << "⚡ Processed " << signals.size() << " signals from limited dataset" << std::endl;
+            std::cout << "⚡ Processed " << signals.size() << " signals from range [" << start_index << "-" << (start_index + bars_to_process - 1) << "]" << std::endl;
         } else {
             std::cout << "⚠️  Processing full dataset - this will take a VERY long time with transformer!" << std::endl;
             signals = transformer->process_dataset(dataset, base_cfg.name, {});
@@ -395,12 +482,12 @@ bool StrattestCommand::validate_parameters(const std::string& dataset,
     }
     
     // Validate strategy name
-    if (strategy != "sigor" && strategy != "cpp_gru" && strategy != "transformer" &&
-        strategy != "momentum" && strategy != "scalper") {
-        std::cerr << "Error: Invalid strategy '" << strategy << "'" << std::endl;
-        std::cerr << "Available strategies: sigor, cpp_gru, transformer, momentum" << std::endl;
-        return false;
-    }
+        if (strategy != "sgo" && strategy != "gru" && strategy != "tfm" &&
+            strategy != "momentum" && strategy != "scalper" && strategy != "ppo") {
+            std::cerr << "Error: Invalid strategy '" << strategy << "'" << std::endl;
+            std::cerr << "Available strategies: sgo, gru, tfm, ppo, momentum" << std::endl;
+            return false;
+        }
     
     return true;
 }
@@ -414,87 +501,191 @@ int StrattestCommand::get_blocks_parameter(const std::vector<std::string>& args)
     return 0;
 }
 
-std::string StrattestCommand::create_limited_dataset(const std::string& original_dataset, int test_bars) const {
-    std::string limited_dataset = "/tmp/limited_dataset_" + std::to_string(getpid()) + ".csv";
+
+#ifdef TORCH_AVAILABLE
+int StrattestCommand::execute_cpp_ppo_strategy(const std::string& dataset,
+                                              const std::string& output,
+                                              const std::vector<std::string>& args) {
+    std::cout << "🤖 Executing C++ PPO Strategy" << std::endl;
+    std::cout << "==============================" << std::endl;
     
-    // Read all lines to determine total count
-    std::ifstream input(original_dataset);
-    std::vector<std::string> all_lines;
-    std::string line;
+    // Parse blocks parameter
+    int blocks_to_process = get_blocks_parameter(args);
     
-    while (std::getline(input, line)) {
-        all_lines.push_back(line);
-    }
-    input.close();
+    // TODO: Update PPO strategy to use index-based processing like other strategies
+    std::cout << "⚠️  PPO strategy still uses full dataset processing (not optimized)" << std::endl;
     
-    if (all_lines.empty()) {
-        std::cerr << "ERROR: Empty dataset file" << std::endl;
-        return limited_dataset;
-    }
-    
-    // Calculate proper backtesting range
-    const int warmup_bars = 64; // GRU sequence length
-    const int total_data_rows = all_lines.size() - 1; // Exclude header
-    const int total_bars_needed = test_bars + warmup_bars;
-    
-    std::cout << "📊 BACKTESTING DATASET CREATION:" << std::endl;
-    std::cout << "  Total available bars: " << total_data_rows << std::endl;
-    std::cout << "  Test bars requested: " << test_bars << std::endl;
-    std::cout << "  Warmup bars needed: " << warmup_bars << std::endl;
-    std::cout << "  Total bars needed: " << total_bars_needed << std::endl;
-    
-    if (total_bars_needed > total_data_rows) {
-        std::cout << "  ⚠️  Requested more bars than available, using all data" << std::endl;
-        // Use all available data
-        std::ofstream output(limited_dataset);
-        for (const auto& line : all_lines) {
-            output << line << std::endl;
+    try {
+        // Initialize C++ PPO strategy with Kochi model
+        sentio::CppPpoConfig config;
+        config.model_path = "kochi/data/PPO_116/real_kochi_model.pt";
+        config.window_size = 30;
+        config.feature_dim = 71;   // Real Kochi feature set (30 x 71 = 2130)
+        config.confidence_threshold = 0.5;
+        config.enable_action_masking = true;
+        config.enable_debug = true;   // Enable for testing
+        
+        auto cpp_ppo = std::make_unique<sentio::CppPpoStrategy>(config);
+        
+        // Initialize strategy
+        if (!cpp_ppo->initialize()) {
+            std::cerr << "❌ Failed to initialize C++ PPO strategy" << std::endl;
+            return 1;
         }
-        output.close();
-        std::cout << "  📅 Using full dataset: " << total_data_rows << " bars" << std::endl;
-        return limited_dataset;
+        
+        std::cout << "✅ C++ PPO Strategy initialized successfully" << std::endl;
+        std::cout << "   Model: " << config.model_path << std::endl;
+        std::cout << "   Window size: " << config.window_size << std::endl;
+        std::cout << "   Feature dimensions: " << config.feature_dim << std::endl;
+        std::cout << "   Action masking: " << (config.enable_action_masking ? "enabled" : "disabled") << std::endl;
+        
+        // Load market data
+        std::cout << "\n📊 Loading market data..." << std::endl;
+        std::ifstream file(dataset);
+        if (!file.is_open()) {
+            std::cerr << "❌ Failed to open dataset: " << dataset << std::endl;
+            return 1;
+        }
+        
+        std::vector<sentio::Bar> bars;
+        std::string line;
+        std::getline(file, line); // Skip header
+        
+        while (std::getline(file, line)) {
+            if (line.empty()) continue;
+            
+            std::istringstream ss(line);
+            std::string token;
+            
+            sentio::Bar bar;
+            
+            // Parse CSV: ts_utc,open,high,low,close,volume
+            std::getline(ss, token, ',');
+            bar.timestamp_ms = std::stoull(token) * 1000; // Convert to milliseconds
+            
+            std::getline(ss, token, ',');
+            bar.open = std::stod(token);
+            
+            std::getline(ss, token, ',');
+            bar.high = std::stod(token);
+            
+            std::getline(ss, token, ',');
+            bar.low = std::stod(token);
+            
+            std::getline(ss, token, ',');
+            bar.close = std::stod(token);
+            
+            std::getline(ss, token, ',');
+            bar.volume = std::stod(token);
+            
+            bars.push_back(bar);
+        }
+        file.close();
+        
+        std::cout << "✅ Loaded " << bars.size() << " bars from dataset" << std::endl;
+        
+        // Generate signals
+        std::cout << "\n🔄 Generating PPO signals..." << std::endl;
+        auto start_time = std::chrono::high_resolution_clock::now();
+        
+        std::vector<sentio::SignalOutput> signals;
+        signals.reserve(bars.size());
+        
+        int processed_bars = 0;
+        int progress_interval = std::max(1, static_cast<int>(bars.size()) / 20); // 5% intervals
+        
+        for (size_t i = 0; i < bars.size(); ++i) {
+            sentio::SignalOutput signal = cpp_ppo->generate_signal(bars[i], static_cast<int>(i));
+            signals.push_back(signal);
+            
+            processed_bars++;
+            if (processed_bars % progress_interval == 0) {
+                double progress = (static_cast<double>(processed_bars) / bars.size()) * 100.0;
+                std::cout << "  📈 Progress: " << std::fixed << std::setprecision(1) 
+                         << progress << "% (" << processed_bars << "/" << bars.size() << " bars)" << std::endl;
+            }
+        }
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto inference_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
+        
+        std::cout << "✅ Generated " << signals.size() << " PPO signals" << std::endl;
+        std::cout << "⏱️  Total inference time: " << inference_time << "ms" << std::endl;
+        std::cout << "🚀 Average time per bar: " << std::fixed << std::setprecision(2) 
+                 << (static_cast<double>(inference_time) / bars.size()) << "ms" << std::endl;
+        
+        // Save signals to JSONL file
+        std::cout << "\n💾 Saving signals to: " << output << std::endl;
+        std::ofstream output_file(output);
+        if (!output_file.is_open()) {
+            std::cerr << "❌ Failed to create output file: " << output << std::endl;
+            return 1;
+        }
+        
+        for (const auto& signal : signals) {
+            // Create JSON object
+            std::ostringstream json_line;
+            json_line << "{";
+            json_line << "\"timestamp_ms\":" << signal.timestamp_ms << ",";
+            json_line << "\"bar_index\":" << signal.bar_index << ",";
+            json_line << "\"probability\":" << std::fixed << std::setprecision(6) << signal.probability << ",";
+            json_line << "\"confidence\":" << std::fixed << std::setprecision(6) << signal.confidence;
+            
+            // Add metadata
+            for (const auto& [key, value] : signal.metadata) {
+                json_line << ",\"" << key << "\":\"" << value << "\"";
+            }
+            
+            json_line << "}";
+            output_file << json_line.str() << std::endl;
+        }
+        output_file.close();
+        
+        std::cout << "✅ Signals saved successfully" << std::endl;
+        
+        // Performance statistics
+        std::cout << "\n📊 PPO Strategy Performance Statistics:" << std::endl;
+        std::cout << "  🎯 Total signals generated: " << signals.size() << std::endl;
+        std::cout << "  ⚡ Average inference time: " << std::fixed << std::setprecision(2) 
+                 << (static_cast<double>(inference_time) / signals.size()) << "ms per signal" << std::endl;
+        
+        // Signal distribution analysis
+        int buy_signals = 0, sell_signals = 0, hold_signals = 0;
+        double avg_confidence = 0.0;
+        
+        for (const auto& signal : signals) {
+            avg_confidence += signal.confidence;
+            
+            // Analyze action from metadata
+            auto action_it = signal.metadata.find("ppo_action");
+            if (action_it != signal.metadata.end()) {
+                if (action_it->second == "BUY") buy_signals++;
+                else if (action_it->second == "SELL") sell_signals++;
+                else if (action_it->second == "HOLD") hold_signals++;
+            }
+        }
+        
+        avg_confidence /= signals.size();
+        
+        std::cout << "  📈 Signal distribution:" << std::endl;
+        std::cout << "    • BUY signals: " << buy_signals << " (" 
+                 << std::fixed << std::setprecision(1) << (100.0 * buy_signals / signals.size()) << "%)" << std::endl;
+        std::cout << "    • SELL signals: " << sell_signals << " (" 
+                 << std::fixed << std::setprecision(1) << (100.0 * sell_signals / signals.size()) << "%)" << std::endl;
+        std::cout << "    • HOLD signals: " << hold_signals << " (" 
+                 << std::fixed << std::setprecision(1) << (100.0 * hold_signals / signals.size()) << "%)" << std::endl;
+        std::cout << "  🎯 Average confidence: " << std::fixed << std::setprecision(3) << avg_confidence << std::endl;
+        
+        std::cout << "\n🎉 C++ PPO strategy execution completed successfully!" << std::endl;
+        
+        return 0;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "❌ C++ PPO strategy execution failed: " << e.what() << std::endl;
+        return 1;
     }
-    
-    // Calculate start position (from the END, going backwards)
-    const int start_row = total_data_rows - total_bars_needed + 1; // +1 because we need to include header
-    const int end_row = total_data_rows;
-    
-    // Extract date range for display
-    std::string start_date = "unknown";
-    std::string end_date = "unknown";
-    
-    if (start_row > 0 && start_row < static_cast<int>(all_lines.size())) {
-        std::istringstream ss(all_lines[start_row]);
-        std::getline(ss, start_date, ','); // First column is ts_utc
-    }
-    
-    if (end_row > 0 && end_row < static_cast<int>(all_lines.size())) {
-        std::istringstream ss(all_lines[end_row]);
-        std::getline(ss, end_date, ','); // First column is ts_utc
-    }
-    
-    std::cout << "  📅 Test period: " << start_date << " to " << end_date << std::endl;
-    std::cout << "  📍 Using rows " << start_row << " to " << end_row << " (most recent data)" << std::endl;
-    
-    // Create limited dataset with proper backtesting range
-    std::ofstream output(limited_dataset);
-    
-    // Copy header
-    output << all_lines[0] << std::endl;
-    
-    // Copy the selected range (warmup + test period from END of dataset)
-    for (int i = start_row; i <= end_row && i < static_cast<int>(all_lines.size()); ++i) {
-        output << all_lines[i] << std::endl;
-    }
-    
-    output.close();
-    
-    const int actual_bars = end_row - start_row + 1;
-    std::cout << "  ✅ Created backtesting dataset with " << actual_bars << " bars" << std::endl;
-    std::cout << "  🔄 First " << warmup_bars << " bars for warmup, remaining " << (actual_bars - warmup_bars) << " bars for testing" << std::endl;
-    
-    return limited_dataset;
 }
+#endif
 
 } // namespace cli
 } // namespace sentio

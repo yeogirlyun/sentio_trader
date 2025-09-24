@@ -35,14 +35,23 @@ public:
     virtual ~StrategyComponent() = default;
 
     // Process a dataset file of Bars and return generated signals.
-    std::vector<SignalOutput> process_dataset(
+    virtual std::vector<SignalOutput> process_dataset(
         const std::string& dataset_path,
         const std::string& strategy_name,
         const std::map<std::string, std::string>& strategy_params
     );
 
+    // Process a specific range of bars from dataset (index-based, high-performance)
+    virtual std::vector<SignalOutput> process_dataset_range(
+        const std::string& dataset_path,
+        const std::string& strategy_name,
+        const std::map<std::string, std::string>& strategy_params,
+        uint64_t start_index = 0,
+        uint64_t count = 0  // 0 = process from start_index to end
+    );
+
     // Export signals to file in jsonl or csv format.
-    bool export_signals(
+    virtual bool export_signals(
         const std::vector<SignalOutput>& signals,
         const std::string& output_path,
         const std::string& format = "jsonl"
