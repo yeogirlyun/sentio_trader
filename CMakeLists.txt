@@ -85,21 +85,20 @@ list(APPEND STRATEGY_SOURCES src/features/kochi_feature_engine.cpp)
 
 # Add ML strategies if LibTorch is available
 if(TORCH_AVAILABLE)
-    list(APPEND STRATEGY_SOURCES src/strategy/transformer_strategy.cpp)
-    list(APPEND STRATEGY_SOURCES src/strategy/optimized_gru_strategy.cpp)
     list(APPEND STRATEGY_SOURCES src/strategy/cpp_ppo_strategy.cpp)
-    message(STATUS "Including ML strategies (Transformer + OptimizedGRU + CppPPO) in build")
+    list(APPEND STRATEGY_SOURCES src/strategy/transformer_strategy.cpp)
+    list(APPEND STRATEGY_SOURCES src/strategy/transformer_model.cpp)
+    message(STATUS "Including ML strategies (CppPPO + Transformer) in build")
     add_compile_definitions(TORCH_AVAILABLE)
 endif()
 
-# ML library with GRU model and training components
+# ML library and training components
 set(ML_SOURCES)
 set(TRAINING_SOURCES)
 
 if(TORCH_AVAILABLE)
-    list(APPEND ML_SOURCES src/ml/gru_model.cpp)
-    list(APPEND TRAINING_SOURCES src/training/gru_trainer.cpp)
     list(APPEND TRAINING_SOURCES src/training/cpp_ppo_trainer.cpp)
+    list(APPEND TRAINING_SOURCES src/training/quality_enforced_loss.cpp)
 endif()
 
 add_library(sentio_strategy ${STRATEGY_SOURCES})
@@ -115,17 +114,22 @@ if(TORCH_AVAILABLE AND ML_SOURCES)
     add_library(sentio_ml ${ML_SOURCES})
     target_link_libraries(sentio_ml PRIVATE sentio_common ${TORCH_LIBRARIES})
     target_include_directories(sentio_ml PRIVATE ${TORCH_INCLUDE_DIRS})
+endif()
+
+# Create training library if LibTorch is available and we have training sources
+if(TORCH_AVAILABLE AND TRAINING_SOURCES)
+    add_library(sentio_training ${TRAINING_SOURCES})
+    target_link_libraries(sentio_training PRIVATE sentio_common ${TORCH_LIBRARIES})
+    target_include_directories(sentio_training PRIVATE ${TORCH_INCLUDE_DIRS})
     
-    # Create training library
-    if(TRAINING_SOURCES)
-        add_library(sentio_training ${TRAINING_SOURCES})
-        target_link_libraries(sentio_training PRIVATE sentio_common sentio_ml ${TORCH_LIBRARIES})
-        target_include_directories(sentio_training PRIVATE ${TORCH_INCLUDE_DIRS})
-        
-        # Add nlohmann/json if available
-        if(nlohmann_json_FOUND)
-            target_link_libraries(sentio_training PRIVATE nlohmann_json::nlohmann_json)
-        endif()
+    # Link with ML library if it exists
+    if(TARGET sentio_ml)
+        target_link_libraries(sentio_training PRIVATE sentio_ml)
+    endif()
+    
+    # Add nlohmann/json if available
+    if(nlohmann_json_FOUND)
+        target_link_libraries(sentio_training PRIVATE nlohmann_json::nlohmann_json)
     endif()
 endif()
 
@@ -177,28 +181,70 @@ endif()
 add_executable(audit src/cli/audit_main.cpp)
 target_link_libraries(audit PRIVATE sentio_backend)
 
-# GRU Trainer executable (only if LibTorch is available)
+# C++ ML Trainer executables (only if LibTorch is available)
 if(TORCH_AVAILABLE AND TARGET sentio_training)
-    add_executable(gru_trainer
-        src/cli/gru_trainer_main.cpp
-    )
-    target_link_libraries(gru_trainer PRIVATE sentio_training)
-    target_include_directories(gru_trainer PRIVATE ${TORCH_INCLUDE_DIRS})
-    target_compile_definitions(gru_trainer PRIVATE TORCH_AVAILABLE)
-    
-    # Add nlohmann/json if available
-    if(nlohmann_json_FOUND)
-        target_link_libraries(gru_trainer PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    
-    message(STATUS "GRU Trainer executable will be built")
-    
-    # C++ PPO Trainer executable
     add_executable(cpp_ppo_trainer src/cli/cpp_ppo_trainer_main.cpp)
     target_link_libraries(cpp_ppo_trainer PRIVATE sentio_training sentio_strategy)
     target_include_directories(cpp_ppo_trainer PRIVATE ${TORCH_INCLUDE_DIRS})
     target_compile_definitions(cpp_ppo_trainer PRIVATE TORCH_AVAILABLE)
     message(STATUS "C++ PPO Trainer executable will be built")
+endif()
+
+# TFM Trainer executable (Production Version - only if LibTorch is available)
+if(TORCH_AVAILABLE)
+    add_executable(tfm_trainer src/cli/tfm_trainer_main.cpp)
+    target_link_libraries(tfm_trainer PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
+    target_include_directories(tfm_trainer PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_definitions(tfm_trainer PRIVATE TORCH_AVAILABLE)
+    
+    # Add nlohmann/json if available
+    if(nlohmann_json_FOUND)
+        target_link_libraries(tfm_trainer PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    message(STATUS "TFM Trainer (Production Version) will be built")
+    
+    # TFM Validator executable
+    add_executable(tfm_validator src/training/tfm_validator.cpp)
+    target_link_libraries(tfm_validator PRIVATE sentio_strategy sentio_common ${TORCH_LIBRARIES})
+    target_include_directories(tfm_validator PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_definitions(tfm_validator PRIVATE TORCH_AVAILABLE)
+    
+    # Add nlohmann/json if available
+    if(nlohmann_json_FOUND)
+        target_link_libraries(tfm_validator PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    # Signal Quality Validator executable
+    add_executable(signal_quality_validator src/training/signal_quality_validator.cpp)
+    target_link_libraries(signal_quality_validator PRIVATE sentio_strategy sentio_common ${TORCH_LIBRARIES})
+    target_include_directories(signal_quality_validator PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_definitions(signal_quality_validator PRIVATE TORCH_AVAILABLE)
+    
+    # Add nlohmann/json if available
+    if(nlohmann_json_FOUND)
+        target_link_libraries(signal_quality_validator PRIVATE nlohmann_json::nlohmann_json)
+    endif()
+    
+    # Enhanced TFM Trainer executable with complete implementation
+    add_executable(tfm_trainer_enhanced src/cli/tfm_trainer_enhanced.cpp)
+    target_link_libraries(tfm_trainer_enhanced PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
+    target_include_directories(tfm_trainer_enhanced PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_definitions(tfm_trainer_enhanced PRIVATE TORCH_AVAILABLE)
+    
+    # TFM Trainer with Validation Loop and Hyperparameter Support
+    add_executable(tfm_trainer_with_validation src/cli/tfm_trainer_with_validation.cpp)
+    target_link_libraries(tfm_trainer_with_validation PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
+    target_include_directories(tfm_trainer_with_validation PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_definitions(tfm_trainer_with_validation PRIVATE TORCH_AVAILABLE)
+    
+    # TFM Trainer with Real Market Data (Production Ready)
+    add_executable(tfm_trainer_real_data src/cli/tfm_trainer_real_data.cpp)
+    target_link_libraries(tfm_trainer_real_data PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
+    target_include_directories(tfm_trainer_real_data PRIVATE ${TORCH_INCLUDE_DIRS})
+    target_compile_definitions(tfm_trainer_real_data PRIVATE TORCH_AVAILABLE)
+    
+    message(STATUS "TFM Validator, Signal Quality Validator, Enhanced TFM Trainer, Validation Trainer, and Real Data Trainer will be built")
 endif()
 
 add_executable(psm_demo src/cli/psm_demo.cpp)
@@ -215,5 +261,45 @@ target_link_libraries(generate_leverage_data PRIVATE sentio_common)
 # -----------------------------------------------------------------------------
 add_executable(csv_to_binary_converter tools/csv_to_binary_converter.cpp)
 target_link_libraries(csv_to_binary_converter PRIVATE sentio_common)
+
+# -----------------------------------------------------------------------------
+# Dataset Analysis Tool
+# -----------------------------------------------------------------------------
+add_executable(analyze_dataset src/tools/analyze_dataset.cpp)
+target_link_libraries(analyze_dataset PRIVATE sentio_common)
+
+# -----------------------------------------------------------------------------
+# Feature Sequence Manager Test Suite
+# -----------------------------------------------------------------------------
+add_executable(test_feature_sequence src/test_feature_sequence_simple.cpp)
+target_link_libraries(test_feature_sequence PRIVATE sentio_common ${TORCH_LIBRARIES})
+target_include_directories(test_feature_sequence PRIVATE ${TORCH_INCLUDE_DIRS})
+target_compile_definitions(test_feature_sequence PRIVATE TORCH_AVAILABLE)
+
+# -----------------------------------------------------------------------------
+# Sequence Diversity Validation Tool
+# -----------------------------------------------------------------------------
+add_executable(validate_sequence_diversity src/validate_sequence_diversity.cpp)
+target_link_libraries(validate_sequence_diversity PRIVATE sentio_strategy sentio_common ${TORCH_LIBRARIES})
+target_include_directories(validate_sequence_diversity PRIVATE ${TORCH_INCLUDE_DIRS})
+target_compile_definitions(validate_sequence_diversity PRIVATE TORCH_AVAILABLE)
+
+# -----------------------------------------------------------------------------
+# Enhanced Training Pipeline Demo
+# -----------------------------------------------------------------------------
+add_executable(demo_enhanced_training src/demo_enhanced_training.cpp)
+target_link_libraries(demo_enhanced_training PRIVATE sentio_strategy sentio_common ${TORCH_LIBRARIES})
+target_include_directories(demo_enhanced_training PRIVATE ${TORCH_INCLUDE_DIRS})
+target_compile_definitions(demo_enhanced_training PRIVATE TORCH_AVAILABLE)
+
+# -----------------------------------------------------------------------------
+# TorchScript Export Validation Tool
+# -----------------------------------------------------------------------------
+add_executable(test_torchscript_export src/test_torchscript_export.cpp)
+target_link_libraries(test_torchscript_export PRIVATE ${TORCH_LIBRARIES})
+target_include_directories(test_torchscript_export PRIVATE ${TORCH_INCLUDE_DIRS})
+target_compile_definitions(test_torchscript_export PRIVATE TORCH_AVAILABLE)
+
+message(STATUS "TorchScript export validation tool will be built")
 
 

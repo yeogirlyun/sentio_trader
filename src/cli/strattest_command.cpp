@@ -1,6 +1,7 @@
 #include "cli/strattest_command.h"
 #include "strategy/sigor_strategy.h"
 #include "strategy/sigor_config.h"
+#include "common/utils.h"
 #include <iostream>
 #include <filesystem>
 #include <chrono>
@@ -14,9 +15,8 @@
 
 // Conditional includes for optional strategies
 #ifdef TORCH_AVAILABLE
-#include "strategy/transformer_strategy.h"
-#include "strategy/optimized_gru_strategy.h"
 #include "strategy/cpp_ppo_strategy.h"
+#include "strategy/transformer_strategy.h"
 #endif
 
 // Check if momentum scalper exists
@@ -86,13 +86,18 @@ int StrattestCommand::execute(const std::vector<std::string>& args) {
         return 0;
     }
     
+    // Check if user tried to specify output file (not allowed - auto-generated)
+    if (!get_arg(args, "--out").empty()) {
+        std::cerr << "❌ ERROR: Output file specification is not allowed." << std::endl;
+        std::cerr << "   Signal files are auto-generated with timestamps for uniqueness." << std::endl;
+        std::cerr << "   Current output: " << output << std::endl;
+        std::cerr << "   Use without --out parameter." << std::endl;
+        return 1;
+    }
+    
     // Apply intelligent defaults for common use cases
     if (dataset.empty()) {
         dataset = "data/equities/QQQ_RTH_NH.csv";
-    }
-    
-    if (output.empty()) {
-        output = generate_output_filename(strategy);
     }
     
     // Validate parameters
@@ -103,11 +108,11 @@ int StrattestCommand::execute(const std::vector<std::string>& args) {
     // Execute strategy based on type
     if (strategy == "sgo") {
         return execute_sigor_strategy(dataset, output, config_path, args);
-    } else if (strategy == "gru") {
+    } else if (strategy == "ppo") {
 #ifdef TORCH_AVAILABLE
-        return execute_cpp_gru_strategy(dataset, output, args);
+        return execute_cpp_ppo_strategy(dataset, output, args);
 #else
-        std::cerr << "Error: GRU strategy not available (LibTorch not found)\n";
+        std::cerr << "Error: PPO strategy not available (LibTorch not found)\n";
         return 1;
 #endif
     } else if (strategy == "tfm") {
@@ -115,13 +120,6 @@ int StrattestCommand::execute(const std::vector<std::string>& args) {
         return execute_transformer_strategy(dataset, output, args);
 #else
         std::cerr << "Error: Transformer strategy not available (LibTorch not found)\n";
-        return 1;
-#endif
-    } else if (strategy == "ppo") {
-#ifdef TORCH_AVAILABLE
-        return execute_cpp_ppo_strategy(dataset, output, args);
-#else
-        std::cerr << "Error: PPO strategy not available (LibTorch not found)\n";
         return 1;
 #endif
     } else if (strategy == "momentum" || strategy == "scalper") {
@@ -135,7 +133,7 @@ int StrattestCommand::execute(const std::vector<std::string>& args) {
         std::cerr << "Error: Unknown strategy '" << strategy << "'\n";
         std::cerr << "Available strategies: sgo";
 #ifdef TORCH_AVAILABLE
-        std::cerr << ", gru, tfm, ppo";
+        std::cerr << ", ppo, tfm";
 #endif
 #ifdef MOMENTUM_SCALPER_AVAILABLE
         std::cerr << ", momentum";
@@ -148,10 +146,10 @@ int StrattestCommand::execute(const std::vector<std::string>& args) {
 void StrattestCommand::show_help() const {
     std::cout << "Usage: sentio_cli strattest [options]\n\n";
     std::cout << "Generate trading signals from market data using AI strategies.\n\n";
+    std::cout << "Note: Signal files are auto-generated with timestamps for uniqueness.\n\n";
     std::cout << "Options:\n";
     std::cout << "  --dataset PATH     Market data file (default: data/equities/QQQ_RTH_NH.csv)\n";
-    std::cout << "  --out PATH         Output signals file (default: auto-generated)\n";
-        std::cout << "  --strategy NAME    Strategy to use: sigor, cpp_gru, transformer, momentum (default: sigor)\n";
+    std::cout << "  --strategy NAME    Strategy to use: sgo, ppo, tfm, momentum (default: sgo)\n";
     std::cout << "  --format FORMAT    Output format: jsonl (default: jsonl)\n";
     std::cout << "  --config PATH      Strategy configuration file (optional)\n";
     std::cout << "  --blocks N         Number of blocks to process (default: all)\n";
@@ -159,10 +157,10 @@ void StrattestCommand::show_help() const {
     std::cout << "  --help, -h         Show this help message\n\n";
     std::cout << "Examples:\n";
     std::cout << "  sentio_cli strattest\n";
-        std::cout << "  sentio_cli strattest --strategy momentum --blocks 20\n";
-    std::cout << "  sentio_cli strattest --strategy cpp_gru --blocks 20\n";
-    std::cout << "  sentio_cli strattest --strategy transformer --blocks 10\n";
-    std::cout << "  sentio_cli strattest --dataset data/custom.csv --out signals.jsonl\n";
+    std::cout << "  sentio_cli strattest --strategy momentum --blocks 20\n";
+    std::cout << "  sentio_cli strattest --strategy ppo --blocks 20\n";
+    std::cout << "  sentio_cli strattest --strategy tfm --blocks 20\n";
+    std::cout << "  sentio_cli strattest --dataset data/custom.csv --blocks 10\n";
 }
 
 int StrattestCommand::execute_sigor_strategy(const std::string& dataset,
@@ -226,114 +224,6 @@ int StrattestCommand::execute_sigor_strategy(const std::string& dataset,
     }
 }
 
-// LEGACY GRU STRATEGY REMOVED FOR PERFORMANCE - USE cpp_gru INSTEAD
-int StrattestCommand::execute_gru_strategy(const std::string& dataset,
-                                         const std::string& output,
-                                         const std::vector<std::string>& args) {
-    std::cerr << "ERROR: Legacy GRU strategy has been removed for performance.\n";
-    std::cerr << "Use 'cpp_gru' for the optimized GRU implementation.\n";
-    return 1;
-}
-
-int StrattestCommand::execute_cpp_gru_strategy(const std::string& dataset,
-                                              const std::string& output,
-                                              const std::vector<std::string>& args) {
-#ifdef TORCH_AVAILABLE
-    try {
-        // Initialize Optimized GRU strategy with 53-feature primary model
-        sentio::OptimizedGruConfig config;
-        config.model_path = "artifacts/GRU/primary/model.pt";
-        config.metadata_path = "artifacts/GRU/primary/metadata.json";
-        config.sequence_length = 64;  // Match primary model
-        config.feature_dim = 53;      // Match primary model (53 features)
-        config.confidence_threshold = 0.6;
-        config.enable_debug = false;  // Disable for maximum performance
-        
-        auto cpp_gru = std::make_unique<sentio::OptimizedGruStrategy>(config);
-        
-        // Initialize the strategy (loads model)
-        if (!cpp_gru->initialize()) {
-            std::cerr << "ERROR: Failed to initialize C++ GRU strategy" << std::endl;
-            return 1;
-        }
-        
-        std::cout << "⚡ Processing dataset with OptimizedGRU strategy: " << dataset << std::endl;
-        std::cout << "   Model: " << config.model_path << std::endl;
-        std::cout << "   Target: <500μs inference time" << std::endl;
-        std::cout << "   Features: Tensor pooling + O(1) incremental updates" << std::endl;
-        
-        // Process dataset using the base strategy interface
-        sentio::StrategyComponent::StrategyConfig base_cfg;
-        base_cfg.name = "cpp_gru";
-        base_cfg.version = "1.0";
-        base_cfg.warmup_bars = config.sequence_length;
-        
-        // Get blocks parameter for performance optimization
-        int blocks_to_process = get_blocks_parameter(args);
-        std::vector<sentio::SignalOutput> signals;
-        
-        if (blocks_to_process > 0) {
-            std::cout << "🔧 Performance mode: Processing only " << blocks_to_process << " blocks (~" << (blocks_to_process * STANDARD_BLOCK_SIZE) << " bars)" << std::endl;
-            std::cout << "⚡ OptimizedGRU with tensor pooling - fast binary data loading with index-based processing" << std::endl;
-            
-            // Use index-based processing (no temporary files needed)
-            uint64_t total_bars = utils::get_market_data_count(dataset);
-            uint64_t bars_to_process = blocks_to_process * STANDARD_BLOCK_SIZE;
-            uint64_t start_index = (total_bars > bars_to_process) ? (total_bars - bars_to_process) : 0;
-            
-            signals = cpp_gru->process_dataset_range(dataset, base_cfg.name, {}, start_index, bars_to_process);
-            
-            std::cout << "⚡ Processed " << signals.size() << " signals from range [" << start_index << "-" << (start_index + bars_to_process - 1) << "]" << std::endl;
-        } else {
-            std::cout << "⚠️  Processing full dataset - this will take a long time!" << std::endl;
-            signals = cpp_gru->process_dataset(dataset, base_cfg.name, {});
-        }
-        
-        // Add C++ GRU specific metadata
-        for (auto& signal : signals) {
-            signal.metadata["market_data_path"] = dataset;
-            signal.metadata["model_type"] = "AdvancedGRU_CPP";
-            signal.metadata["model_path"] = config.model_path;
-            signal.metadata["feature_count"] = std::to_string(config.feature_dim);
-            signal.metadata["sequence_length"] = std::to_string(config.sequence_length);
-            signal.metadata["optimized"] = "true";
-            signal.metadata["tensor_pooling"] = "enabled";
-        }
-        
-        // Export signals
-        bool success = cpp_gru->export_signals(signals, output, "jsonl");
-        if (!success) {
-            std::cerr << "ERROR: Failed exporting C++ GRU signals to " << output << std::endl;
-            return 2;
-        }
-        
-        // Get performance statistics
-        auto stats = cpp_gru->get_performance_stats();
-        std::cout << "✅ Exported " << signals.size() << " OptimizedGRU signals to " << output << std::endl;
-        std::cout << "📊 Performance Statistics:" << std::endl;
-        std::cout << "   Total inferences: " << stats.total_inferences << std::endl;
-        std::cout << "   Average inference time: " << stats.avg_inference_time_us << "μs" << std::endl;
-        std::cout << "   Max inference time: " << stats.max_inference_time_us << "μs" << std::endl;
-        std::cout << "   Average confidence: " << std::fixed << std::setprecision(3) << stats.avg_confidence << std::endl;
-        
-        if (stats.avg_inference_time_us < 500) {
-            std::cout << "🎯 PERFORMANCE TARGET MET: <500μs ✅" << std::endl;
-        } else {
-            std::cout << "⚠️  Performance target missed: " << stats.avg_inference_time_us << "μs > 500μs" << std::endl;
-        }
-        
-        return 0;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "ERROR: C++ GRU strategy execution failed: " << e.what() << std::endl;
-        return 1;
-    }
-#else
-    std::cerr << "ERROR: C++ GRU strategy not available (LibTorch not found)" << std::endl;
-    return 1;
-#endif
-}
-
 int StrattestCommand::execute_transformer_strategy(const std::string& dataset,
                                                   const std::string& output,
                                                   const std::vector<std::string>& args) {
@@ -341,29 +231,28 @@ int StrattestCommand::execute_transformer_strategy(const std::string& dataset,
     try {
         // Initialize Transformer strategy
         sentio::StrategyComponent::StrategyConfig base_cfg;
-        base_cfg.name = "transformer";
-        base_cfg.version = "1.0";
+        base_cfg.name = "transformer_v2";
+        base_cfg.version = "2.0";
         base_cfg.warmup_bars = 64; // Transformer requires sequence warmup
         
-        sentio::TransformerStrategy::TransformerConfig transformer_cfg;
-        // Use the trained model artifacts (PyTorch 2.6.0 compatible)
-        transformer_cfg.model_path = "artifacts/Transformer/v2_2_6_0_compatible/model.pt";
-        transformer_cfg.metadata_path = "artifacts/Transformer/v2_2_6_0_compatible/metadata.json";
-        transformer_cfg.sequence_length = 64;
-        transformer_cfg.feature_count = 173;
-        transformer_cfg.enable_debug_logging = has_flag(args, "--debug");
+        sentio::TransformerStrategy::Config transformer_cfg;
+        // Use default model path - user should train model first
+        transformer_cfg.model_path = "artifacts/Transformer/real_data_3epoch/tfm_model.pt";  // ✅ UPDATED: Use real data trained model
+        transformer_cfg.metadata_path = "artifacts/Transformer/real_data_3epoch/tfm_metadata.json";  // ✅ UPDATED: Use corresponding metadata
+        transformer_cfg.confidence_threshold = 0.5;  // ✅ UPDATED: Meaningful threshold now that confidence calculation is fixed
         
         auto transformer = std::make_unique<sentio::TransformerStrategy>(base_cfg, transformer_cfg);
         
         // Initialize the strategy (load model)
-        std::cout << "Initializing Transformer strategy..." << std::endl;
+        std::cout << "Initializing Transformer strategy v2..." << std::endl;
         if (!transformer->initialize()) {
             std::cerr << "ERROR: Failed to initialize Transformer strategy" << std::endl;
+            std::cerr << "Make sure to train the model first using: ./build/tfm_trainer" << std::endl;
             return 1;
         }
         
         // Process dataset with limited blocks for performance
-        std::cout << "Processing dataset with Transformer strategy: " << dataset << std::endl;
+        std::cout << "Processing dataset with Transformer strategy v2: " << dataset << std::endl;
         
         // Get blocks parameter for performance optimization
         int blocks_to_process = get_blocks_parameter(args);
@@ -371,7 +260,7 @@ int StrattestCommand::execute_transformer_strategy(const std::string& dataset,
         
         if (blocks_to_process > 0) {
             std::cout << "🔧 Performance mode: Processing only " << blocks_to_process << " blocks (~" << (blocks_to_process * STANDARD_BLOCK_SIZE) << " bars)" << std::endl;
-            std::cout << "⚡ Large transformer model (4.78M params) - fast binary data loading with index-based processing" << std::endl;
+            std::cout << "⚡ Transformer v2 with dual-head architecture - fast inference with uncertainty estimation" << std::endl;
             
             // Use index-based processing (no temporary files needed)
             uint64_t total_bars = utils::get_market_data_count(dataset);
@@ -382,17 +271,16 @@ int StrattestCommand::execute_transformer_strategy(const std::string& dataset,
             
             std::cout << "⚡ Processed " << signals.size() << " signals from range [" << start_index << "-" << (start_index + bars_to_process - 1) << "]" << std::endl;
         } else {
-            std::cout << "⚠️  Processing full dataset - this will take a VERY long time with transformer!" << std::endl;
+            std::cout << "⚠️  Processing full dataset - this will take a long time with transformer!" << std::endl;
             signals = transformer->process_dataset(dataset, base_cfg.name, {});
         }
         
         // Add metadata
         for (auto& signal : signals) {
             signal.metadata["market_data_path"] = dataset;
-            signal.metadata["model_type"] = "Transformer";
-            signal.metadata["feature_count"] = "173";
-            signal.metadata["sequence_length"] = "64";
-            signal.metadata["model_version"] = "v2_2_6_0_compatible";
+            signal.metadata["model_type"] = "Transformer_v2";
+            signal.metadata["dual_head"] = "true";
+            signal.metadata["uncertainty_estimation"] = "true";
         }
         
         // Export signals
@@ -402,14 +290,7 @@ int StrattestCommand::execute_transformer_strategy(const std::string& dataset,
             return 2;
         }
         
-        // Show performance stats
-        auto stats = transformer->get_inference_stats();
-        std::cout << "📊 Transformer Performance:" << std::endl;
-        std::cout << "   Total inferences: " << stats.total_inferences << std::endl;
-        std::cout << "   Average time: " << stats.avg_inference_time_us << " μs" << std::endl;
-        std::cout << "   Latency violations: " << stats.latency_violations << " (" << (stats.violation_rate * 100.0) << "%)" << std::endl;
-        
-        std::cout << "✅ Exported " << signals.size() << " Transformer signals to " << output << std::endl;
+        std::cout << "✅ Exported " << signals.size() << " Transformer v2 signals to " << output << std::endl;
         return 0;
         
     } catch (const std::exception& e) {
@@ -482,10 +363,10 @@ bool StrattestCommand::validate_parameters(const std::string& dataset,
     }
     
     // Validate strategy name
-        if (strategy != "sgo" && strategy != "gru" && strategy != "tfm" &&
-            strategy != "momentum" && strategy != "scalper" && strategy != "ppo") {
+        if (strategy != "sgo" && strategy != "ppo" && strategy != "tfm" &&
+            strategy != "momentum" && strategy != "scalper") {
             std::cerr << "Error: Invalid strategy '" << strategy << "'" << std::endl;
-            std::cerr << "Available strategies: sgo, gru, tfm, ppo, momentum" << std::endl;
+            std::cerr << "Available strategies: sgo, ppo, tfm, momentum" << std::endl;
             return false;
         }
     
