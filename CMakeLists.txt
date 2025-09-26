@@ -79,9 +79,8 @@ set(STRATEGY_SOURCES
     src/strategy/ml_strategy_base.cpp
 )
 
-# Add feature engines (always available)
+# Add feature engines (always available) - 🔧 CONSOLIDATED: Single unified 91-feature engine
 list(APPEND STRATEGY_SOURCES src/features/unified_feature_engine.cpp)
-list(APPEND STRATEGY_SOURCES src/features/kochi_feature_engine.cpp)
 
 # Add ML strategies if LibTorch is available
 if(TORCH_AVAILABLE)
@@ -192,28 +191,7 @@ endif()
 
 # TFM Trainer executable (Production Version - only if LibTorch is available)
 if(TORCH_AVAILABLE)
-    add_executable(tfm_trainer src/cli/tfm_trainer_main.cpp)
-    target_link_libraries(tfm_trainer PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
-    target_include_directories(tfm_trainer PRIVATE ${TORCH_INCLUDE_DIRS})
-    target_compile_definitions(tfm_trainer PRIVATE TORCH_AVAILABLE)
     
-    # Add nlohmann/json if available
-    if(nlohmann_json_FOUND)
-        target_link_libraries(tfm_trainer PRIVATE nlohmann_json::nlohmann_json)
-    endif()
-    
-    message(STATUS "TFM Trainer (Production Version) will be built")
-    
-    # TFM Validator executable
-    add_executable(tfm_validator src/training/tfm_validator.cpp)
-    target_link_libraries(tfm_validator PRIVATE sentio_strategy sentio_common ${TORCH_LIBRARIES})
-    target_include_directories(tfm_validator PRIVATE ${TORCH_INCLUDE_DIRS})
-    target_compile_definitions(tfm_validator PRIVATE TORCH_AVAILABLE)
-    
-    # Add nlohmann/json if available
-    if(nlohmann_json_FOUND)
-        target_link_libraries(tfm_validator PRIVATE nlohmann_json::nlohmann_json)
-    endif()
     
     # Signal Quality Validator executable
     add_executable(signal_quality_validator src/training/signal_quality_validator.cpp)
@@ -226,25 +204,23 @@ if(TORCH_AVAILABLE)
         target_link_libraries(signal_quality_validator PRIVATE nlohmann_json::nlohmann_json)
     endif()
     
-    # Enhanced TFM Trainer executable with complete implementation
-    add_executable(tfm_trainer_enhanced src/cli/tfm_trainer_enhanced.cpp)
-    target_link_libraries(tfm_trainer_enhanced PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
-    target_include_directories(tfm_trainer_enhanced PRIVATE ${TORCH_INCLUDE_DIRS})
-    target_compile_definitions(tfm_trainer_enhanced PRIVATE TORCH_AVAILABLE)
     
-    # TFM Trainer with Validation Loop and Hyperparameter Support
-    add_executable(tfm_trainer_with_validation src/cli/tfm_trainer_with_validation.cpp)
-    target_link_libraries(tfm_trainer_with_validation PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
-    target_include_directories(tfm_trainer_with_validation PRIVATE ${TORCH_INCLUDE_DIRS})
-    target_compile_definitions(tfm_trainer_with_validation PRIVATE TORCH_AVAILABLE)
     
-    # TFM Trainer with Real Market Data (Production Ready)
-    add_executable(tfm_trainer_real_data src/cli/tfm_trainer_real_data.cpp)
-    target_link_libraries(tfm_trainer_real_data PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
-    target_include_directories(tfm_trainer_real_data PRIVATE ${TORCH_INCLUDE_DIRS})
-    target_compile_definitions(tfm_trainer_real_data PRIVATE TORCH_AVAILABLE)
+
+
+# Data Preprocessing Utility (Binary Data Pipeline)
+add_executable(preprocess_data src/cli/preprocess_data.cpp)
+target_link_libraries(preprocess_data PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
+target_include_directories(preprocess_data PRIVATE ${TORCH_INCLUDE_DIRS})
+target_compile_definitions(preprocess_data PRIVATE TORCH_AVAILABLE)
+
+# TFM Efficient Trainer (Uses Pre-processed Binary Data)
+add_executable(tfm_trainer_efficient src/cli/tfm_trainer_efficient.cpp)
+target_link_libraries(tfm_trainer_efficient PRIVATE sentio_strategy sentio_common sentio_training ${TORCH_LIBRARIES})
+target_include_directories(tfm_trainer_efficient PRIVATE ${TORCH_INCLUDE_DIRS})
+target_compile_definitions(tfm_trainer_efficient PRIVATE TORCH_AVAILABLE)
     
-    message(STATUS "TFM Validator, Signal Quality Validator, Enhanced TFM Trainer, Validation Trainer, and Real Data Trainer will be built")
+    message(STATUS "TFM Signal Quality Validator, Data Preprocessor, and Efficient Trainer will be built")
 endif()
 
 add_executable(psm_demo src/cli/psm_demo.cpp)
@@ -268,13 +244,6 @@ target_link_libraries(csv_to_binary_converter PRIVATE sentio_common)
 add_executable(analyze_dataset src/tools/analyze_dataset.cpp)
 target_link_libraries(analyze_dataset PRIVATE sentio_common)
 
-# -----------------------------------------------------------------------------
-# Feature Sequence Manager Test Suite
-# -----------------------------------------------------------------------------
-add_executable(test_feature_sequence src/test_feature_sequence_simple.cpp)
-target_link_libraries(test_feature_sequence PRIVATE sentio_common ${TORCH_LIBRARIES})
-target_include_directories(test_feature_sequence PRIVATE ${TORCH_INCLUDE_DIRS})
-target_compile_definitions(test_feature_sequence PRIVATE TORCH_AVAILABLE)
 
 # -----------------------------------------------------------------------------
 # Sequence Diversity Validation Tool
@@ -284,22 +253,6 @@ target_link_libraries(validate_sequence_diversity PRIVATE sentio_strategy sentio
 target_include_directories(validate_sequence_diversity PRIVATE ${TORCH_INCLUDE_DIRS})
 target_compile_definitions(validate_sequence_diversity PRIVATE TORCH_AVAILABLE)
 
-# -----------------------------------------------------------------------------
-# Enhanced Training Pipeline Demo
-# -----------------------------------------------------------------------------
-add_executable(demo_enhanced_training src/demo_enhanced_training.cpp)
-target_link_libraries(demo_enhanced_training PRIVATE sentio_strategy sentio_common ${TORCH_LIBRARIES})
-target_include_directories(demo_enhanced_training PRIVATE ${TORCH_INCLUDE_DIRS})
-target_compile_definitions(demo_enhanced_training PRIVATE TORCH_AVAILABLE)
 
-# -----------------------------------------------------------------------------
-# TorchScript Export Validation Tool
-# -----------------------------------------------------------------------------
-add_executable(test_torchscript_export src/test_torchscript_export.cpp)
-target_link_libraries(test_torchscript_export PRIVATE ${TORCH_LIBRARIES})
-target_include_directories(test_torchscript_export PRIVATE ${TORCH_INCLUDE_DIRS})
-target_compile_definitions(test_torchscript_export PRIVATE TORCH_AVAILABLE)
-
-message(STATUS "TorchScript export validation tool will be built")
 
 

@@ -2,6 +2,7 @@
 #include "common/utils.h"
 #include "strategy/transformer_model.h" // For the model class definition
 #include "common/feature_sequence_manager.h" // NEW: For proper sequence management
+#include "features/feature_config_standard.h" // 🔧 CONSOLIDATED: Standard 91-feature config
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <chrono>
@@ -26,12 +27,22 @@ bool TransformerStrategy::initialize() {
         return false;
     }
     
-    // 2. Initialize the Unified Feature Engine with correct configuration.
-    //    This engine must generate features identical to those used in the C++ trainer.
-    features::UnifiedFeatureEngine::Config feature_config;
-    // TODO: Configure the feature engine to match the PPO/Kochi standard feature set.
-    // For now, using default configuration.
+    // 2. 🔧 CONSOLIDATED: Initialize with standardized 91-feature configuration
+    //    This ensures identical features between TFM, PPO, and all future ML strategies
+    auto feature_config = features::get_standard_91_feature_config();
+    if (!features::validate_91_feature_config(feature_config)) {
+        utils::log_error("❌ CRITICAL: Standard feature configuration validation failed!");
+        return false;
+    }
     feature_engine_ = std::make_unique<features::UnifiedFeatureEngine>(feature_config);
+    
+    // 🔍 DEBUG: Verify actual feature count matches expected (91)
+    std::cout << "🔧 DEBUG: Configured UnifiedFeatureEngine with filtered features" << std::endl;
+    std::cout << "   Expected feature count: " << model_config_.feature_dim << " (from metadata)" << std::endl;
+    std::cout << "   Configured feature count: " << feature_config.total_features() << std::endl;
+    std::cout << "   Statistical features: " << (feature_config.enable_statistical ? "enabled" : "disabled") << std::endl;
+    std::cout << "   Price lag features: " << (feature_config.enable_price_lags ? "enabled" : "disabled") << std::endl;
+    std::cout << "   Return lag features: " << (feature_config.enable_return_lags ? "enabled" : "disabled") << std::endl;
     
     // 3. Initialize the Feature Sequence Manager to fix the critical temporal bug
     sequence_manager_ = std::make_unique<FeatureSequenceManager>(
@@ -205,11 +216,11 @@ SignalOutput TransformerStrategy::generate_signal(const Bar& bar, int bar_index)
         // A positive return suggests a higher probability of price increase.
         signal.probability = 1.0 / (1.0 + std::exp(-predicted_return * 100));
 
-        // ✅ FIXED: Sigmoid-based confidence calculation for learned log-variance range
-        // The uncertainty head learned a constant value around 2.0, so we center around that
+        // ✅ ENHANCED v2: Statistical sigma-based confidence calculation (improved)
+        // Convert log-variance to standard deviation (sigma) for more intuitive confidence
         double log_variance = log_var.item<double>();
-        double centered_log_var = log_variance - 2.0;  // Center around learned constant (~2.0)
-        signal.confidence = 1.0 / (1.0 + std::exp(centered_log_var));
+        double sigma = std::exp(0.5 * log_variance);  // Convert log_var to standard deviation
+        signal.confidence = 1.0 - std::min(1.0, sigma);  // Higher sigma = lower confidence
         
         // Ensure confidence is in reasonable range [0.1, 0.9] for trading
         signal.confidence = std::max(0.1, std::min(0.9, signal.confidence));

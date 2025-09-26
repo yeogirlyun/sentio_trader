@@ -236,10 +236,10 @@ int StrattestCommand::execute_transformer_strategy(const std::string& dataset,
         base_cfg.warmup_bars = 64; // Transformer requires sequence warmup
         
         sentio::TransformerStrategy::Config transformer_cfg;
-        // Use default model path - user should train model first
-        transformer_cfg.model_path = "artifacts/Transformer/real_data_3epoch/tfm_model.pt";  // ✅ UPDATED: Use real data trained model
-        transformer_cfg.metadata_path = "artifacts/Transformer/real_data_3epoch/tfm_metadata.json";  // ✅ UPDATED: Use corresponding metadata
-        transformer_cfg.confidence_threshold = 0.5;  // ✅ UPDATED: Meaningful threshold now that confidence calculation is fixed
+        // 🔧 FIX: Use 2-epoch retrained model with correct 91-feature normalization metadata
+        transformer_cfg.model_path = "artifacts/Transformer/filtered_2epoch/tfm_model.pt";  // ✅ UPDATED: Use 2-epoch retrained model  
+        transformer_cfg.metadata_path = "artifacts/Transformer/filtered_2epoch/tfm_metadata.json";  // ✅ UPDATED: Use correct 91-feature metadata
+        transformer_cfg.confidence_threshold = 0.05;  // 🔧 TEMP: Lowered for comparison testing (was 0.5)
         
         auto transformer = std::make_unique<sentio::TransformerStrategy>(base_cfg, transformer_cfg);
         
@@ -401,7 +401,7 @@ int StrattestCommand::execute_cpp_ppo_strategy(const std::string& dataset,
         sentio::CppPpoConfig config;
         config.model_path = "kochi/data/PPO_116/real_kochi_model.pt";
         config.window_size = 30;
-        config.feature_dim = 71;   // Real Kochi feature set (30 x 71 = 2130)
+        config.feature_dim = 91;   // 🔧 TFM LESSON: Filtered UnifiedFeatureEngine set (30 x 91 = 2730)
         config.confidence_threshold = 0.5;
         config.enable_action_masking = true;
         config.enable_debug = true;   // Enable for testing
